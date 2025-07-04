@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tuum.csaccountseventsconsumer.mapper.BalanceMapper">
+
+    <resultMap id="BalanceResultMap" type="com.tuum.csaccountseventsconsumer.model.Balance">
+        <id column="balance_id" property="balanceId"/>
+        <result column="account_id" property="accountId"/>
+        <result column="currency" property="currency"/>
+        <result column="available_amount" property="availableAmount"/>
+        <result column="version_number" property="versionNumber"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <insert id="insertBalance" parameterType="com.tuum.csaccountseventsconsumer.model.Balance">
+        INSERT INTO balances (balance_id, account_id, currency, available_amount, version_number, created_at, updated_at)
+        VALUES (#{balanceId}, #{accountId}, #{currency}, #{availableAmount}, #{versionNumber}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="findBalancesByAccountId" resultMap="BalanceResultMap">
+        SELECT * FROM balances WHERE account_id = #{accountId}
+    </select>
+
+    <select id="existsBalance" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM balances WHERE account_id = #{accountId} AND currency = #{currency})
+    </select>
+
+    <select id="findBalanceByAccountIdAndCurrency" resultMap="BalanceResultMap">
+        SELECT * FROM balances WHERE account_id = #{accountId} AND currency = #{currency}
+    </select>
+
+    <update id="updateBalance" parameterType="com.tuum.csaccountseventsconsumer.model.Balance">
+        UPDATE balances 
+        SET available_amount = #{availableAmount}, 
+            version_number = #{versionNumber}, 
+            updated_at = #{updatedAt}
+        WHERE balance_id = #{balanceId}
+    </update>
+
+</mapper> 

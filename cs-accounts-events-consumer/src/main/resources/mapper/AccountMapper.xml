@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tuum.csaccountseventsconsumer.mapper.AccountMapper">
+
+    <resultMap id="AccountResultMap" type="com.tuum.csaccountseventsconsumer.model.Account">
+        <id column="account_id" property="accountId"/>
+        <result column="customer_id" property="customerId"/>
+        <result column="country" property="country"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <insert id="insertAccount" parameterType="com.tuum.csaccountseventsconsumer.model.Account">
+        INSERT INTO accounts (account_id, customer_id, country, created_at, updated_at)
+        VALUES (#{accountId}, #{customerId}, #{country}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="findAccountById" resultMap="AccountResultMap">
+        SELECT account_id, customer_id, country, created_at, updated_at
+        FROM accounts
+        WHERE account_id = #{accountId}
+    </select>
+
+    <select id="existsAccountById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM accounts WHERE account_id = #{accountId})
+    </select>
+
+</mapper> 

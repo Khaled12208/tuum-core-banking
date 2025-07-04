@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tuum.csaccountseventsconsumer.mapper.TransactionMapper">
+
+    <resultMap id="TransactionResultMap" type="com.tuum.csaccountseventsconsumer.model.Transaction">
+        <id column="transaction_id" property="transactionId"/>
+        <result column="account_id" property="accountId"/>
+        <result column="amount" property="amount"/>
+        <result column="currency" property="currency"/>
+        <result column="direction" property="direction"/>
+        <result column="description" property="description"/>
+        <result column="balance_after" property="balanceAfter"/>
+        <result column="status" property="status"/>
+        <result column="idempotency_key" property="idempotencyKey"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <insert id="insertTransaction" parameterType="com.tuum.csaccountseventsconsumer.model.Transaction">
+        INSERT INTO transactions (transaction_id, account_id, amount, currency, direction, description, balance_after, status, idempotency_key, created_at)
+        VALUES (#{transactionId}, #{accountId}, #{amount}, #{currency}, #{direction}, #{description}, #{balanceAfter}, #{status}, #{idempotencyKey}, #{createdAt})
+    </insert>
+
+    <select id="findTransactionById" resultMap="TransactionResultMap">
+        SELECT transaction_id, account_id, amount, currency, direction, description, balance_after, status, idempotency_key, created_at
+        FROM transactions
+        WHERE transaction_id = #{transactionId}
+    </select>
+
+    <select id="existsTransactionById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM transactions WHERE transaction_id = #{transactionId})
+    </select>
+
+    <select id="existsTransactionByIdempotencyKey" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM transactions WHERE idempotency_key = #{idempotencyKey})
+    </select>
+
+    <select id="findTransactionByIdempotencyKey" resultMap="TransactionResultMap">
+        SELECT transaction_id, account_id, amount, currency, direction, description, balance_after, status, idempotency_key, created_at
+        FROM transactions
+        WHERE idempotency_key = #{idempotencyKey}
+    </select>
+
+</mapper> 

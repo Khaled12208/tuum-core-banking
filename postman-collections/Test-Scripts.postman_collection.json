@@ -1,0 +1,460 @@
+{
+  "info": {
+    "_postman_id": "tuum-core-banking-tests",
+    "name": "Tuum Core Banking - Automated Tests",
+    "description": "Automated test collection with pre-request and test scripts for comprehensive API testing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Account Creation Flow",
+      "item": [
+        {
+          "name": "1. Create Account and Store ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test account creation response",
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has account ID\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.have.property('accountId');",
+                  "    pm.expect(response.accountId).to.be.a('string');",
+                  "    pm.expect(response.accountId).to.not.be.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"Response has customer ID\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.have.property('customerId');",
+                  "    pm.expect(response.customerId).to.eql(pm.environment.get('customerId'));",
+                  "});",
+                  "",
+                  "pm.test(\"Response has balances\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.have.property('balances');",
+                  "    pm.expect(response.balances).to.be.an('array');",
+                  "    pm.expect(response.balances.length).to.be.greaterThan(0);",
+                  "});",
+                  "",
+                  "// Store account ID for subsequent requests",
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('accountId', response.accountId);",
+                  "    console.log('Account ID stored:', response.accountId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"country\": \"EE\",\n  \"currencies\": [\"EUR\", \"USD\"]\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/accounts",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "accounts"]
+            }
+          }
+        },
+        {
+          "name": "2. Verify Account Retrieval",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Account ID matches\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.accountId).to.eql(pm.environment.get('accountId'));",
+                  "});",
+                  "",
+                  "pm.test(\"Customer ID matches\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.customerId).to.eql(pm.environment.get('customerId'));",
+                  "});",
+                  "",
+                  "pm.test(\"Account has correct currencies\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.balances).to.be.an('array');",
+                  "    pm.expect(response.balances.length).to.eql(2);",
+                  "    ",
+                  "    const currencies = response.balances.map(b => b.currency);",
+                  "    pm.expect(currencies).to.include('EUR');",
+                  "    pm.expect(currencies).to.include('USD');",
+                  "});",
+                  "",
+                  "pm.test(\"Balances are initialized to zero\", function () {",
+                  "    const response = pm.response.json();",
+                  "    response.balances.forEach(balance => {",
+                  "        pm.expect(balance.availableAmount).to.eql(0);",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/accounts/{{accountId}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transaction Flow",
+      "item": [
+        {
+          "name": "1. Create IN Transaction",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has transaction ID\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response).to.have.property('transactionId');",
+                  "    pm.expect(response.transactionId).to.be.a('string');",
+                  "    pm.expect(response.transactionId).to.not.be.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"Transaction amount matches\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.amount).to.eql(100.50);",
+                  "});",
+                  "",
+                  "pm.test(\"Transaction direction is IN\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.direction).to.eql('IN');",
+                  "});",
+                  "",
+                  "// Store transaction ID",
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('transactionId', response.transactionId);",
+                  "    console.log('Transaction ID stored:', response.transactionId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"EUR\",\n  \"direction\": \"IN\",\n  \"description\": \"Salary payment\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "2. Verify Account Balance After IN Transaction",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"EUR balance is updated\", function () {",
+                  "    const response = pm.response.json();",
+                  "    const eurBalance = response.balances.find(b => b.currency === 'EUR');",
+                  "    pm.expect(eurBalance).to.exist;",
+                  "    pm.expect(eurBalance.availableAmount).to.eql(100.50);",
+                  "});",
+                  "",
+                  "pm.test(\"USD balance remains zero\", function () {",
+                  "    const response = pm.response.json();",
+                  "    const usdBalance = response.balances.find(b => b.currency === 'USD');",
+                  "    pm.expect(usdBalance).to.exist;",
+                  "    pm.expect(usdBalance.availableAmount).to.eql(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/accounts/{{accountId}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}"]
+            }
+          }
+        },
+        {
+          "name": "3. Create OUT Transaction",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Transaction direction is OUT\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.direction).to.eql('OUT');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 25.00,\n  \"currency\": \"EUR\",\n  \"direction\": \"OUT\",\n  \"description\": \"Grocery shopping\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "4. Verify Final Balance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"EUR balance is correct after OUT transaction\", function () {",
+                  "    const response = pm.response.json();",
+                  "    const eurBalance = response.balances.find(b => b.currency === 'EUR');",
+                  "    pm.expect(eurBalance).to.exist;",
+                  "    pm.expect(eurBalance.availableAmount).to.eql(75.50);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/accounts/{{accountId}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "accounts", "{{accountId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error Handling Tests",
+      "item": [
+        {
+          "name": "Test Insufficient Funds",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Error message indicates insufficient funds\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.message).to.include('insufficient');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 1000000.00,\n  \"currency\": \"EUR\",\n  \"direction\": \"OUT\",\n  \"description\": \"Large withdrawal\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Test Invalid Currency",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Error message indicates invalid currency\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.message).to.include('currency');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 100.00,\n  \"currency\": \"INVALID\",\n  \"direction\": \"IN\",\n  \"description\": \"Test transaction\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Idempotency Tests",
+      "item": [
+        {
+          "name": "Test Account Creation Idempotency",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 for duplicate request\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Error message indicates account already exists\", function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.message).to.include('already exists');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "test-idempotency-key"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"idempotency-test\",\n  \"country\": \"EE\",\n  \"currencies\": [\"EUR\"]\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/accounts",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "accounts"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "http://localhost:8083",
+      "type": "string"
+    }
+  ]
+}

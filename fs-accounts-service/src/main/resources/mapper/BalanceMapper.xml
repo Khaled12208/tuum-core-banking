@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tuum.fsaccountsservice.mapper.BalanceMapper">
+
+    <resultMap id="BalanceResultMap" type="com.tuum.fsaccountsservice.model.Balance">
+        <id column="balance_id" property="balanceId"/>
+        <result column="account_id" property="accountId"/>
+        <result column="currency" property="currency" typeHandler="org.apache.ibatis.type.EnumTypeHandler"/>
+        <result column="available_amount" property="availableAmount"/>
+        <result column="version_number" property="versionNumber"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="findBalanceById" resultMap="BalanceResultMap">
+        SELECT balance_id, account_id, currency, available_amount, version_number, created_at, updated_at 
+        FROM balances WHERE balance_id = #{balanceId}
+    </select>
+
+    <select id="findBalancesByAccountId" resultMap="BalanceResultMap">
+        SELECT balance_id, account_id, currency, available_amount, version_number, created_at, updated_at 
+        FROM balances WHERE account_id = #{accountId}
+        ORDER BY currency
+    </select>
+
+    <select id="findBalanceByAccountIdAndCurrency" resultMap="BalanceResultMap">
+        SELECT balance_id, account_id, currency, available_amount, version_number, created_at, updated_at 
+        FROM balances 
+        WHERE account_id = #{accountId} AND currency = #{currency}
+    </select>
+
+</mapper> 

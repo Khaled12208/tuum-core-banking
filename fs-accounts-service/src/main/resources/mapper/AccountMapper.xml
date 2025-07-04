@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tuum.fsaccountsservice.mapper.AccountMapper">
+
+    <!-- Result map for Account with nested Balance collection -->
+    <resultMap id="AccountWithBalancesResultMap" type="com.tuum.fsaccountsservice.model.Account">
+        <id column="account_id" property="accountId"/>
+        <result column="customer_id" property="customerId"/>
+        <result column="country" property="country"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <collection property="balances" ofType="com.tuum.fsaccountsservice.model.Balance" javaType="java.util.ArrayList">
+            <id column="balance_id" property="balanceId"/>
+            <result column="balance_account_id" property="accountId"/>
+            <result column="currency" property="currency"/>
+            <result column="available_amount" property="availableAmount"/>
+            <result column="version_number" property="versionNumber"/>
+            <result column="balance_created_at" property="createdAt"/>
+            <result column="balance_updated_at" property="updatedAt"/>
+        </collection>
+    </resultMap>
+
+    <!-- Simple result map for Account without balances -->
+    <resultMap id="AccountResultMap" type="com.tuum.fsaccountsservice.model.Account">
+        <id column="account_id" property="accountId"/>
+        <result column="customer_id" property="customerId"/>
+        <result column="country" property="country"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <!-- Find account by ID with balances -->
+    <select id="findAccountById" resultMap="AccountWithBalancesResultMap">
+        SELECT 
+            a.account_id,
+            a.customer_id,
+            a.country,
+            a.created_at,
+            a.updated_at,
+            b.balance_id,
+            b.account_id as balance_account_id,
+            b.currency,
+            b.available_amount,
+            b.version_number,
+            b.created_at as balance_created_at,
+            b.updated_at as balance_updated_at
+        FROM accounts a
+        LEFT JOIN balances b ON a.account_id = b.account_id
+        WHERE a.account_id = #{accountId}
+        ORDER BY b.currency
+    </select>
+
+    <!-- Find accounts by customer ID with balances -->
+    <select id="findAccountsByCustomerId" resultMap="AccountWithBalancesResultMap">
+        SELECT 
+            a.account_id,
+            a.customer_id,
+            a.country,
+            a.created_at,
+            a.updated_at,
+            b.balance_id,
+            b.account_id as balance_account_id,
+            b.currency,
+            b.available_amount,
+            b.version_number,
+            b.created_at as balance_created_at,
+            b.updated_at as balance_updated_at
+        FROM accounts a
+        LEFT JOIN balances b ON a.account_id = b.account_id
+        WHERE a.customer_id = #{customerId}
+        ORDER BY a.created_at DESC, b.currency
+    </select>
+
+    <!-- Find all accounts with balances -->
+    <select id="findAllAccounts" resultMap="AccountWithBalancesResultMap">
+        SELECT 
+            a.account_id,
+            a.customer_id,
+            a.country,
+            a.created_at,
+            a.updated_at,
+            b.balance_id,
+            b.account_id as balance_account_id,
+            b.currency,
+            b.available_amount,
+            b.version_number,
+            b.created_at as balance_created_at,
+            b.updated_at as balance_updated_at
+        FROM accounts a
+        LEFT JOIN balances b ON a.account_id = b.account_id
+        ORDER BY a.created_at DESC, b.currency
+    </select>
+
+    <!-- Find accounts by currency and accountId with balances -->
+    <select id="findAccountsByCurrencyAndAccountId" resultMap="AccountWithBalancesResultMap">
+        SELECT 
+            a.account_id,
+            a.customer_id,
+            a.country,
+            a.created_at,
+            a.updated_at,
+            b.balance_id,
+            b.account_id as balance_account_id,
+            b.currency,
+            b.available_amount,
+            b.version_number,
+            b.created_at as balance_created_at,
+            b.updated_at as balance_updated_at
+        FROM accounts a
+        INNER JOIN balances b ON a.account_id = b.account_id
+        WHERE b.currency = #{currency} AND a.account_id = #{accountId}
+        ORDER BY a.created_at DESC
+    </select>
+
+</mapper> 

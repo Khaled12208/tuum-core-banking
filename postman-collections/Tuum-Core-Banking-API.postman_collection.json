@@ -1,0 +1,650 @@
+{
+  "info": {
+    "_postman_id": "tuum-core-banking-api",
+    "name": "Tuum Core Banking API",
+    "description": "Comprehensive API collection for Tuum Core Banking system covering all scenarios for accounts and transactions",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Accounts",
+      "item": [
+        {
+          "name": "Happy Path Scenarios",
+          "item": [
+            {
+              "name": "Create Account - Single Currency",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"12345\",\n  \"country\": \"EE\",\n  \"currencies\": [\"EUR\"]\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts"]
+                }
+              }
+            },
+            {
+              "name": "Create Account - Multiple Currencies",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"67890\",\n  \"country\": \"LV\",\n  \"currencies\": [\"EUR\", \"USD\", \"GBP\"]\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts"]
+                }
+              }
+            },
+            {
+              "name": "Get Account by ID",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts/{{accountId}}",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts", "{{accountId}}"]
+                }
+              }
+            },
+            {
+              "name": "Get Account Balances",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts/{{accountId}}/balances",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts", "{{accountId}}", "balances"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error Scenarios",
+          "item": [
+            {
+              "name": "Create Account - Invalid Country Code",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"12345\",\n  \"country\": \"INVALID\",\n  \"currencies\": [\"EUR\"]\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts"]
+                }
+              }
+            },
+            {
+              "name": "Create Account - Invalid Currency",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"12345\",\n  \"country\": \"EE\",\n  \"currencies\": [\"INVALID\"]\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts"]
+                }
+              }
+            },
+            {
+              "name": "Create Account - Missing Required Fields",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"12345\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts"]
+                }
+              }
+            },
+            {
+              "name": "Create Account - Empty Currencies Array",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"12345\",\n  \"country\": \"EE\",\n  \"currencies\": []\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts"]
+                }
+              }
+            },
+            {
+              "name": "Get Account - Non-existent Account",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts/non-existent-id",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts", "non-existent-id"]
+                }
+              }
+            },
+            {
+              "name": "Create Account - Missing Idempotency Key",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"12345\",\n  \"country\": \"EE\",\n  \"currencies\": [\"EUR\"]\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Idempotency Scenarios",
+          "item": [
+            {
+              "name": "Create Account - Same Idempotency Key",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "same-key-123"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"12345\",\n  \"country\": \"EE\",\n  \"currencies\": [\"EUR\"]\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts"]
+                }
+              }
+            },
+            {
+              "name": "Create Account - Same Idempotency Key (Second Request)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "same-key-123"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"12345\",\n  \"country\": \"EE\",\n  \"currencies\": [\"EUR\"]\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "accounts"]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Happy Path Scenarios",
+          "item": [
+            {
+              "name": "Create Transaction - IN",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 100.50,\n  \"currency\": \"EUR\",\n  \"direction\": \"IN\",\n  \"description\": \"Salary payment\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions"]
+                }
+              }
+            },
+            {
+              "name": "Create Transaction - OUT",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 25.00,\n  \"currency\": \"EUR\",\n  \"direction\": \"OUT\",\n  \"description\": \"Grocery shopping\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions"]
+                }
+              }
+            },
+            {
+              "name": "Get Transaction by ID",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions/{{transactionId}}",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions", "{{transactionId}}"]
+                }
+              }
+            },
+            {
+              "name": "Get Account Transactions",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/accounts/{{accountId}}/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": [
+                    "api",
+                    "v1",
+                    "accounts",
+                    "{{accountId}}",
+                    "transactions"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error Scenarios",
+          "item": [
+            {
+              "name": "Create Transaction - Insufficient Funds",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 1000000.00,\n  \"currency\": \"EUR\",\n  \"direction\": \"OUT\",\n  \"description\": \"Large withdrawal\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions"]
+                }
+              }
+            },
+            {
+              "name": "Create Transaction - Invalid Currency",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 100.00,\n  \"currency\": \"INVALID\",\n  \"direction\": \"IN\",\n  \"description\": \"Test transaction\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions"]
+                }
+              }
+            },
+            {
+              "name": "Create Transaction - Invalid Direction",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 100.00,\n  \"currency\": \"EUR\",\n  \"direction\": \"INVALID\",\n  \"description\": \"Test transaction\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions"]
+                }
+              }
+            },
+            {
+              "name": "Create Transaction - Non-existent Account",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountId\": \"non-existent-account\",\n  \"amount\": 100.00,\n  \"currency\": \"EUR\",\n  \"direction\": \"IN\",\n  \"description\": \"Test transaction\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions"]
+                }
+              }
+            },
+            {
+              "name": "Create Transaction - Negative Amount",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": -100.00,\n  \"currency\": \"EUR\",\n  \"direction\": \"IN\",\n  \"description\": \"Test transaction\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions"]
+                }
+              }
+            },
+            {
+              "name": "Create Transaction - Zero Amount",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 0.00,\n  \"currency\": \"EUR\",\n  \"direction\": \"IN\",\n  \"description\": \"Test transaction\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions"]
+                }
+              }
+            },
+            {
+              "name": "Get Transaction - Non-existent Transaction",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions/non-existent-transaction",
+                  "host": ["{{BASE_URL}}"],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    "non-existent-transaction"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Idempotency Scenarios",
+          "item": [
+            {
+              "name": "Create Transaction - Same Idempotency Key",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "same-tx-key-123"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 50.00,\n  \"currency\": \"EUR\",\n  \"direction\": \"IN\",\n  \"description\": \"Test transaction\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions"]
+                }
+              }
+            },
+            {
+              "name": "Create Transaction - Same Idempotency Key (Second Request)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "same-tx-key-123"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 50.00,\n  \"currency\": \"EUR\",\n  \"direction\": \"IN\",\n  \"description\": \"Test transaction\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/transactions",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "transactions"]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health & Monitoring",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/actuator/health",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "actuator", "health"]
+            }
+          }
+        },
+        {
+          "name": "Info Endpoint",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/actuator/info",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "actuator", "info"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "http://localhost:8083",
+      "type": "string"
+    },
+    {
+      "key": "accountId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transactionId",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

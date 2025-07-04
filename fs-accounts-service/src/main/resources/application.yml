@@ -1,0 +1,57 @@
+server:
+  port: ${SERVER_PORT:8083}
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: fs-accounts-service
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/tuum_banking}
+    username: ${SPRING_DATASOURCE_USERNAME:tuum_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:tuum_password}
+    driver-class-name: org.postgresql.Driver
+
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:tuum_user}
+    password: ${SPRING_RABBITMQ_PASSWORD:tuum_password}
+
+  # Disable JPA auto-configuration since we're using MyBatis
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.transaction.jta.JtaAutoConfiguration
+
+  # Disable JPA
+  jpa:
+    enabled: false
+
+  # MyBatis configuration
+  mybatis:
+    mapper-locations: classpath:mapper/*.xml
+    type-aliases-package: com.tuum.fsaccountsservice.model
+    configuration:
+      map-underscore-to-camel-case: true
+      log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# OpenAPI/Swagger configuration
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+
+# Actuator configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

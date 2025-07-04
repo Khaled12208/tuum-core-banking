@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tuum.csaccountseventsconsumer.mapper.ProcessedMessageMapper">
+
+    <resultMap id="ProcessedMessageResultMap" type="com.tuum.csaccountseventsconsumer.model.ProcessedMessage">
+        <id column="message_id" property="messageId"/>
+        <result column="message_type" property="messageType"/>
+        <result column="processed_at" property="processedAt"/>
+        <result column="result_data" property="resultData"/>
+    </resultMap>
+
+    <insert id="insertProcessedMessage" parameterType="com.tuum.csaccountseventsconsumer.model.ProcessedMessage">
+        INSERT INTO processed_messages (message_id, message_type, processed_at, result_data)
+        VALUES (#{messageId}, #{messageType}, #{processedAt}, #{resultData}::jsonb)
+    </insert>
+
+    <select id="existsProcessedMessage" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM processed_messages WHERE message_id = #{messageId})
+    </select>
+
+</mapper> 

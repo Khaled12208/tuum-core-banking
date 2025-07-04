@@ -1,0 +1,4 @@
+rootProject.name = 'tuum-core-banking'
+include 'fs-accounts-service'
+include 'cs-accounts-events-consumer'
+
