@@ -44,7 +44,7 @@ This project is a **microservices-based core banking platform** designed to hand
 
 * i provided a postman collection you can import it in your client and enjoy testing manually
 * there is also unit test coverage for client service
-* working on integraiton and e2e testing
+* E2E test coverage
 
 ## System Architecture
 
@@ -114,14 +114,18 @@ graph TB
     ./gradlew :fs-accounts-service:bootRun
     ./gradlew :cs-accounts-events-consumer:bootRun
    ```
-1. **How To start the project on docker**
+2. **How To start the project on docker**
+
    ```bash
     docker-compose up -d
-    ./gradlew :fs-accounts-service:build
-    ./gradlew :cs-accounts-events-consumer:build
-    ./gradlew :common-lib:build
-    ./gradlew :fs-accounts-service:bootRun
-    ./gradlew :cs-accounts-events-consumer:bootRun
+
+   ```
+
+3. **How To start the project on docker**
+
+   ```bash
+    ./gradlew :acceptance-test:allureReport
+     ./gradlew :acceptance-test:allureServe
    ```
 
 ### Database Configuration
@@ -255,14 +259,15 @@ docker-compose logs -f rabbitmq
 #### Account Management
 
 - `POST /api/v1/accounts` - Create new account
-- `GET /api/v1/accounts/{id}` - Get account details
-- `GET /api/v1/accounts/{id}/balances` - Get account balances
+- `GET /api/v1/accounts/{id}` - Get account details (includes balances)
+- `GET /api/v1/accounts/customer/{customerId}` - Get accounts by customer
+- `GET /api/v1/accounts` - Get all accounts
 
 #### Transaction Management
 
 - `POST /api/v1/transactions` - Create new transaction
 - `GET /api/v1/transactions/{id}` - Get transaction details
-- `GET /api/v1/accounts/{id}/transactions` - Get account transactions
+- `GET /api/v1/transactions/account/{accountId}` - Get transactions by account
 
 #### Health & Monitoring
 
