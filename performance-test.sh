@@ -11,12 +11,14 @@ BASE_URL="http://localhost:8083/api/v1"
 ACCOUNT_ID="ACCEF85E2AB"  # From the account we just created
 TEST_DURATION=30  # seconds
 CONCURRENT_REQUESTS=5
+TRANSACTION_REQUESTS=1000  # Number of transaction requests to run
 
 echo "📊 Test Configuration:"
 echo "  - Base URL: $BASE_URL"
 echo "  - Account ID: $ACCOUNT_ID"
 echo "  - Test Duration: $TEST_DURATION seconds"
 echo "  - Concurrent Requests: $CONCURRENT_REQUESTS"
+echo "  - Transaction Requests: $TRANSACTION_REQUESTS"
 echo ""
 
 # Function to generate unique idempotency key
@@ -49,6 +51,64 @@ test_transaction_creation() {
         --data "{\"accountId\": \"$ACCOUNT_ID\", \"amount\": $amount.50, \"currency\": \"EUR\", \"direction\": \"$direction\", \"description\": \"Performance test transaction\"}" \
         -w "%{time_total},%{http_code}\n" \
         -o /dev/null
+}
+
+# Function to run 1000 transaction requests
+run_1000_transaction_test() {
+    local count=$TRANSACTION_REQUESTS
+    
+    echo "🔥 Running $count transaction requests..."
+    echo "⏰ Starting at: $(date)"
+    
+    local start_time=$(date +%s.%N)
+    local success_count=0
+    local total_time=0
+    local error_count=0
+    
+    # Create progress tracking
+    local progress_interval=$((count / 20))  # Show progress every 5%
+    if [ $progress_interval -eq 0 ]; then
+        progress_interval=50
+    fi
+    
+    for i in $(seq 1 $count); do
+        result=$(test_transaction_creation)
+        
+        # Parse result: time,http_code
+        time=$(echo $result | cut -d',' -f1)
+        http_code=$(echo $result | cut -d',' -f2)
+        
+        if [ "$http_code" = "200" ]; then
+            success_count=$((success_count + 1))
+            total_time=$(echo "$total_time + $time" | bc -l)
+        else
+            error_count=$((error_count + 1))
+        fi
+        
+        # Show progress
+        if [ $((i % progress_interval)) -eq 0 ]; then
+            echo "  Progress: $i/$count (${success_count} success, ${error_count} errors)"
+        fi
+    done
+    
+    local end_time=$(date +%s.%N)
+    local duration=$(echo "$end_time - $start_time" | bc -l)
+    
+    echo "⏰ Finished at: $(date)"
+    echo "✅ 1000 Transaction Test Results:"
+    echo "  - Total requests: $count"
+    echo "  - Successful requests: $success_count"
+    echo "  - Failed requests: $error_count"
+    echo "  - Success rate: $(echo "scale=1; $success_count * 100 / $count" | bc -l)%"
+    echo "  - Total time: ${duration}s"
+    if [ $success_count -gt 0 ]; then
+        echo "  - Average response time: $(echo "scale=3; $total_time / $success_count" | bc -l)s"
+        echo "  - Throughput: $(echo "scale=2; $success_count / $duration" | bc -l) requests/second"
+    else
+        echo "  - Average response time: N/A (no successful requests)"
+        echo "  - Throughput: 0 requests/second"
+    fi
+    echo ""
 }
 
 # Function to run concurrent tests
@@ -161,16 +221,19 @@ run_sustained_test() {
 echo "🧪 Starting Performance Tests..."
 echo ""
 
-# Test 1: Concurrent Account Creation
+# Test 1: 1000 Transaction Requests (Main Test)
+run_1000_transaction_test
+
+# Test 2: Concurrent Account Creation
 run_concurrent_test "account" $CONCURRENT_REQUESTS
 
-# Test 2: Concurrent Transaction Creation
+# Test 3: Concurrent Transaction Creation
 run_concurrent_test "transaction" $CONCURRENT_REQUESTS
 
-# Test 3: Sustained Account Creation Load
+# Test 4: Sustained Account Creation Load
 run_sustained_test "account" $TEST_DURATION
 
-# Test 4: Sustained Transaction Load
+# Test 5: Sustained Transaction Load
 run_sustained_test "transaction" $TEST_DURATION
 
 echo "🎯 Performance Test Summary"

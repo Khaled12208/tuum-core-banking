@@ -35,9 +35,10 @@ This project is a **microservices-based core banking platform** designed to hand
 
 - ** Development Machine Performance for transcription endpoint **
 
-* Concurrent Test (5 requests): 5.0 requests/second
-* Average Response Time: 0.089 seconds ~89 milliseconds.
-* If each request takes 0.089s and they’re handled in parallel (concurrent), the system can handle 1/ 0.089s ≈11.24 requests/s
+* using a sample of 1000 request
+* Concurrent TPS 83.3 Peak performance with parallel requests
+* Bandwidth 8.86 KB/s,
+* Response Time 66 ms
 
 - ** for functional testing and demo:**
 
