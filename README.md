@@ -27,16 +27,23 @@ This project is a **microservices-based core banking platform** designed to hand
   - cleaning the code
 
 - **Future-enactments**
- - Exception handling should be better 
- - using design pattern
- - loggin 
- - full ASYNC processing
+- Exception handling should be better
+- using design pattern
+- loggin
+- full ASYNC processing
+- using AUTH like JWT alongside with API-KEY for security
 
 - ** Development Machine Performance for transcription endpoint **
 
 * Concurrent Test (5 requests): 5.0 requests/second
 * Average Response Time: 0.089 seconds ~89 milliseconds.
 * If each request takes 0.089s and they’re handled in parallel (concurrent), the system can handle 1/ 0.089s ≈11.24 requests/s
+
+- ** for functional testing and demo:**
+
+* i provided a postman collection you can import it in your client and enjoy testing manually
+* there is also unit test coverage for client service
+* working on integraiton and e2e testing
 
 ## System Architecture
 
@@ -212,55 +219,6 @@ erDiagram
 - **Cascade Deletes**: Account deletion cascades to balances and transactions
 - **Message Tracking**: Processed messages table for event sourcing
 
-## 🔄 Event Flow
-
-### Account Creation Flow
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant FS as fs-accounts-service
-    participant RMQ as RabbitMQ
-    participant CS as cs-accounts-events-consumer
-    participant DB as PostgreSQL
-    participant WS as WebSocket
-
-    Client->>FS: POST /api/v1/accounts
-    FS->>RMQ: Publish account-creation event
-    RMQ->>CS: Consume event
-    CS->>DB: Create account & balances
-    CS->>RMQ: Publish success notification
-    RMQ->>FS: Consume notification
-    FS->>Client: Return account details
-    FS->>WS: Send real-time notification
-```
-
-### Transaction Processing Flow
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant FS as fs-accounts-service
-    participant RMQ as RabbitMQ
-    participant CS as cs-accounts-events-consumer
-    participant DB as PostgreSQL
-    participant WS as WebSocket
-
-    Client->>FS: POST /api/v1/transactions
-    FS->>RMQ: Publish transaction event
-    RMQ->>CS: Consume event
-    CS->>DB: Validate & process transaction
-    alt Sufficient funds
-        CS->>DB: Update balance
-        CS->>RMQ: Publish success notification
-    else Insufficient funds
-        CS->>RMQ: Publish error notification
-    end
-    RMQ->>FS: Consume notification
-    FS->>Client: Return transaction result
-    FS->>WS: Send real-time notification
-```
-
 ### Building and Testing
 
 ```bash
@@ -290,7 +248,6 @@ docker-compose logs -f cs-accounts-events-consumer
 docker-compose logs -f postgres
 docker-compose logs -f rabbitmq
 ```
-
 
 ### Key Endpoints
 
@@ -343,7 +300,6 @@ curl -s -u tuum_user:tuum_password http://localhost:15672/api/queues | jq '.[].n
 # Get queue details
 curl -s -u tuum_user:tuum_password http://localhost:15672/api/queues/%2F/account-events-queue
 ```
-
 
 ## System Architecture Overview
 
