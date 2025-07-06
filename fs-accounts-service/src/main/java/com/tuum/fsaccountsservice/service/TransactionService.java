@@ -1,140 +1,166 @@
 package com.tuum.fsaccountsservice.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.tuum.fsaccountsservice.config.RabbitMQConfig;
-import com.tuum.fsaccountsservice.dto.CreateTransactionRequest;
-import com.tuum.fsaccountsservice.dto.TransactionCreatedEvent;
-import com.tuum.fsaccountsservice.dto.TransactionProcessedEvent;
-import com.tuum.fsaccountsservice.exception.BusinessException;
-import com.tuum.fsaccountsservice.exception.ValidationException;
-import com.tuum.fsaccountsservice.exception.ErrorResponse;
+import com.tuum.common.domain.entities.Account;
+import com.tuum.common.domain.entities.Transaction;
+import com.tuum.common.dto.mq.MQMessageData;
+import com.tuum.common.types.RabbitMQConfig;
+import com.tuum.common.types.RequestType;
+import com.tuum.fsaccountsservice.dto.requests.CreateTransactionRequest;
+import com.tuum.fsaccountsservice.dto.resonse.TransactionResponse;
+import com.tuum.common.dto.mq.CreateTransactionEvent;
+import com.tuum.common.exception.BusinessException;
+import com.tuum.common.exception.InsufficientFundsException;
+import com.tuum.common.exception.ResourceNotFoundException;
+import com.tuum.fsaccountsservice.mapper.AccountMapper;
+import com.tuum.fsaccountsservice.mapper.BalanceMapper;
 import com.tuum.fsaccountsservice.mapper.TransactionMapper;
-import com.tuum.fsaccountsservice.model.Transaction;
+
+import com.tuum.common.util.TraceIdGenerator;
+import com.tuum.common.dto.mq.ErrorNotification;
+import com.tuum.common.types.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.util.Map;
+import com.tuum.fsaccountsservice.dto.resonse.BalanceResponse;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class TransactionService {
 
-    private final RabbitTemplate rabbitTemplate;
-    private final ObjectMapper objectMapper;
     private final TransactionMapper transactionMapper;
+    private final AccountMapper accountMapper;
+    private final BalanceMapper balanceMapper;
+    private final EventPublisherService eventPublisherService;
+    private final TraceIdGenerator traceIdGenerator;
+    private final IdempotencyService idempotencyService;
 
-    // Store pending transactions waiting for WebSocket response
-    private final ConcurrentHashMap<String, CompletableFuture<TransactionProcessedEvent>> pendingTransactions = new ConcurrentHashMap<>();
+    @Transactional
+    public TransactionResponse createTransaction(CreateTransactionRequest request, String idempotencyKey) {
+        String requestId = traceIdGenerator.generateTraceId();
+        log.info("Creating transaction with requestId: {} and idempotency key: {}", requestId, idempotencyKey);
+        
 
-    public TransactionProcessedEvent createTransaction(CreateTransactionRequest request, String idempotencyKey) {
-        log.info("Creating transaction for account: {} with idempotency key: {}", request.getAccountId(), idempotencyKey);
         
-        // Service-level validation for amount > 0
-        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ValidationException(List.of(
-                ErrorResponse.ValidationError.builder()
-                    .field("amount")
-                    .message("Transaction amount must be positive")
-                    .rejectedValue(request.getAmount() != null ? request.getAmount().toString() : "null")
-                    .build()
-            ));
-        }
-        
-        // Check if we already have a pending transaction with this idempotency key
-        CompletableFuture<TransactionProcessedEvent> existingFuture = pendingTransactions.get(idempotencyKey);
-        if (existingFuture != null) {
-            log.info("Transaction with idempotency key {} is already being processed, waiting for completion", idempotencyKey);
-            try {
-                TransactionProcessedEvent result = existingFuture.get(30, TimeUnit.SECONDS);
-                log.info("Returning existing transaction result for idempotency key: {}", idempotencyKey);
-                return result;
-            } catch (java.util.concurrent.TimeoutException e) {
-                log.error("Timeout waiting for existing transaction with idempotency key: {}", idempotencyKey, e);
-                throw new BusinessException("Transaction creation timed out - consumer may not be running");
-            } catch (Exception e) {
-                log.error("Error waiting for existing transaction with idempotency key: {}", idempotencyKey, e);
-                throw new BusinessException("Transaction creation failed: " + e.getMessage());
+        // Fast in-memory idempotency check
+        if (idempotencyService.isProcessed(idempotencyKey)) {
+            log.info("Transaction already processed in memory, skipping: {}", idempotencyKey);
+            // Return existing transaction from database if available
+            Transaction existingTransaction = transactionMapper.findTransactionByIdempotencyKey(idempotencyKey);
+            if (existingTransaction != null) {
+                return createResponseFromTransaction(existingTransaction);
             }
+            throw new BusinessException("Transaction already processed but not found in database");
         }
         
-        // Generate transaction ID
-        String transactionId = UUID.randomUUID().toString();
-        
-        // Create transaction event
-        TransactionCreatedEvent event = new TransactionCreatedEvent();
-        event.setTransactionId(transactionId);
-        event.setAccountId(request.getAccountId());
-        event.setAmount(request.getAmount());
-        event.setCurrency(request.getCurrency().toString());
-        event.setDirection(request.getDirection().toString());
-        event.setDescription(request.getDescription());
-        event.setIdempotencyKey(idempotencyKey);
-        event.setCreatedAt(LocalDateTime.now().toString());
-        
-        // Create a future to wait for completion and store it with idempotency key
-        CompletableFuture<TransactionProcessedEvent> future = new CompletableFuture<>();
-        pendingTransactions.put(idempotencyKey, future);
+        // Mark as processed in memory immediately to prevent duplicate processing
+        idempotencyService.markAsProcessed(idempotencyKey);
         
         try {
-            log.info("About to publish transaction event to RabbitMQ: {}", event);
-            
-            // Publish transaction creation request to message queue
-            rabbitTemplate.convertAndSend(RabbitMQConfig.TUUM_BANKING_EXCHANGE, 
-                "transactions.events.created", event);
-            
-            log.info("Successfully published transaction creation request for consumer processing: {}", transactionId);
-            
-            // Wait for completion
-            log.info("Waiting for consumer to process transaction: {}", transactionId);
-            TransactionProcessedEvent result = future.get(30, TimeUnit.SECONDS);
-            log.info("Received result from consumer for transaction: {}", transactionId);
-            return result;
-            
-        } catch (java.util.concurrent.TimeoutException e) {
-            log.error("Timeout waiting for consumer to process transaction: {}", transactionId, e);
-            throw new BusinessException("Transaction creation timed out - consumer may not be running");
+            Account account = accountMapper.findAccountById(request.getAccountId());
+            if (account == null) {
+                throw new ResourceNotFoundException("Account not found with id: " + request.getAccountId());
+            }
+            CreateTransactionEvent event = new CreateTransactionEvent();
+            event.setTransactionId(java.util.UUID.randomUUID().toString());
+            event.setAccountId(request.getAccountId());
+            event.setAmount(request.getAmount());
+            event.setCurrency(request.getCurrency());
+            event.setDirection(request.getDirection());
+            event.setDescription(request.getDescription());
+            event.setIdempotencyKey(idempotencyKey);
+            event.setCreatedAt(LocalDateTime.now());
+            log.info("Event: {}", event);
+            log.info("Exchange: {}", RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue());
+            log.info("Routing key: {}", RabbitMQConfig.TRANSACTIONS_CREATED_ROUTING_KEY.getValue());
+
+            return eventPublisherService.publishEventAndWaitForResponse(
+                event, 
+                RabbitMQConfig.TRANSACTIONS_CREATED_ROUTING_KEY.getValue(),
+                idempotencyKey,
+                    requestId,
+                30,
+                    RequestType.CREATE
+            );
+        } catch (BusinessException e) {
+            log.error("Business error creating transaction: {}", idempotencyKey, e);
+            throw e; // Re-throw business exceptions as-is
         } catch (Exception e) {
-            log.error("Error creating transaction: {}", transactionId, e);
-            throw new BusinessException("Transaction creation failed: " + e.getMessage());
+            log.error("Error creating transaction: {}", idempotencyKey, e);
+            throw new BusinessException("Failed to create transaction: " + e.getMessage());
         } finally {
-            pendingTransactions.remove(idempotencyKey);
+            traceIdGenerator.clear();
         }
     }
 
-    public void completeTransaction(String idempotencyKey, TransactionProcessedEvent event) {
-        CompletableFuture<TransactionProcessedEvent> future = pendingTransactions.get(idempotencyKey);
-        if (future != null) {
-            future.complete(event);
-            log.info("Completed pending transaction with idempotency key: {}", idempotencyKey);
-        } else {
-            log.warn("No pending transaction found for idempotency key: {}", idempotencyKey);
-        }
+    public void completeTransaction(Object event, MQMessageData messageData) {
+        String idempotencyKey = messageData.getIdempotencyKey();
+        String status = messageData.getStatus();
+
+        if ("SUCCESS".equalsIgnoreCase(status) && event instanceof CreateTransactionEvent transactionCreatedEvent) {
+            TransactionResponse response = new TransactionResponse();
+            response.setTransactionId(transactionCreatedEvent.getTransactionId());
+            response.setAccountId(transactionCreatedEvent.getAccountId());
+            response.setAmount(transactionCreatedEvent.getAmount());
+            response.setCurrency(transactionCreatedEvent.getCurrency());
+            response.setDirection(transactionCreatedEvent.getDirection());
+            response.setDescription(transactionCreatedEvent.getDescription());
+            response.setBalanceAfterTransaction(transactionCreatedEvent.getBalanceAfterTransaction());
+            eventPublisherService.completeRequest(idempotencyKey, response);
+        } else
+            eventPublisherService.completeRequest(idempotencyKey, event);
     }
 
-    public List<Transaction> getTransactionsByAccountId(String accountId) {
-        log.info("Retrieving transactions for account: {}", accountId);
-        List<Transaction> transactions = transactionMapper.findTransactionsByAccountId(accountId);
-        log.info("Found {} transactions for account: {}", transactions != null ? transactions.size() : 0, accountId);
-        return transactions;
-    }
-
-    public Transaction getTransactionById(String transactionId) {
-        log.info("Retrieving transaction by ID: {}", transactionId);
+    @Transactional(readOnly = true)
+    public Transaction getTransaction(String transactionId) {
         Transaction transaction = transactionMapper.findTransactionById(transactionId);
         if (transaction == null) {
-            log.warn("Transaction not found with ID: {}", transactionId);
-        } else {
-            log.info("Found transaction: {}", transactionId);
+            throw new ResourceNotFoundException("Transaction not found with id: " + transactionId);
         }
         return transaction;
     }
+
+    @Transactional(readOnly = true)
+    public List<Transaction> getAccountTransactions(String accountId) {
+        return transactionMapper.findTransactionsByAccountId(accountId);
+    }
+
+    private TransactionResponse createResponseFromTransaction(Transaction transaction) {
+        TransactionResponse response = new TransactionResponse();
+        response.setTransactionId(transaction.getTransactionId());
+        response.setAccountId(transaction.getAccountId());
+        response.setBalanceId(transaction.getBalanceId());
+        response.setAmount(transaction.getAmount());
+        response.setCurrency(transaction.getCurrency());
+        response.setDirection(transaction.getDirection());
+        response.setDescription(transaction.getDescription());
+        response.setBalanceAfterTransaction(transaction.getBalanceAfterTransaction());
+        response.setStatus(transaction.getStatus().name());
+        response.setIdempotencyKey(transaction.getIdempotencyKey());
+        response.setCreatedAt(transaction.getCreatedAt());
+        response.setUpdatedAt(transaction.getUpdatedAt());
+        
+        // Fetch and include balance information
+        if (transaction.getBalanceId() != null) {
+            var balance = balanceMapper.findBalanceById(transaction.getBalanceId());
+            if (balance != null) {
+                BalanceResponse balanceResponse = new BalanceResponse();
+                balanceResponse.setBalanceId(balance.getBalanceId());
+                balanceResponse.setAccountId(balance.getAccountId());
+                balanceResponse.setCurrency(balance.getCurrency());
+                balanceResponse.setAvailableAmount(balance.getAvailableAmount());
+                balanceResponse.setCreatedAt(balance.getCreatedAt());
+                balanceResponse.setUpdatedAt(balance.getUpdatedAt());
+                response.setBalance(balanceResponse);
+            }
+        }
+        
+        return response;
+    }
+
 } 

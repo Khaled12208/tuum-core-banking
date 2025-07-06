@@ -2,19 +2,19 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.tuum.csaccountseventsconsumer.mapper.BalanceMapper">
 
-    <resultMap id="BalanceResultMap" type="com.tuum.csaccountseventsconsumer.model.Balance">
+    <resultMap id="BalanceResultMap" type="com.tuum.common.domain.entities.Balance">
         <id column="balance_id" property="balanceId"/>
         <result column="account_id" property="accountId"/>
-        <result column="currency" property="currency"/>
+        <result column="currency" property="currency" typeHandler="com.tuum.common.util.CurrencyTypeHandler"/>
         <result column="available_amount" property="availableAmount"/>
         <result column="version_number" property="versionNumber"/>
         <result column="created_at" property="createdAt"/>
         <result column="updated_at" property="updatedAt"/>
     </resultMap>
 
-    <insert id="insertBalance" parameterType="com.tuum.csaccountseventsconsumer.model.Balance">
+    <insert id="insertBalance" parameterType="com.tuum.common.domain.entities.Balance">
         INSERT INTO balances (balance_id, account_id, currency, available_amount, version_number, created_at, updated_at)
-        VALUES (#{balanceId}, #{accountId}, #{currency}, #{availableAmount}, #{versionNumber}, #{createdAt}, #{updatedAt})
+        VALUES (#{balanceId}, #{accountId}, #{currency,typeHandler=com.tuum.common.util.CurrencyTypeHandler}, #{availableAmount}, #{versionNumber}, #{createdAt}, #{updatedAt})
     </insert>
 
     <select id="findBalancesByAccountId" resultMap="BalanceResultMap">
@@ -22,19 +22,19 @@
     </select>
 
     <select id="existsBalance" resultType="boolean">
-        SELECT EXISTS(SELECT 1 FROM balances WHERE account_id = #{accountId} AND currency = #{currency})
+        SELECT EXISTS(SELECT 1 FROM balances WHERE account_id = #{accountId} AND currency = #{currency,typeHandler=com.tuum.common.util.CurrencyTypeHandler})
     </select>
 
     <select id="findBalanceByAccountIdAndCurrency" resultMap="BalanceResultMap">
-        SELECT * FROM balances WHERE account_id = #{accountId} AND currency = #{currency}
+        SELECT * FROM balances WHERE account_id = #{accountId} AND currency = #{currency,typeHandler=com.tuum.common.util.CurrencyTypeHandler}
     </select>
 
-    <update id="updateBalance" parameterType="com.tuum.csaccountseventsconsumer.model.Balance">
+    <update id="updateBalance">
         UPDATE balances 
-        SET available_amount = #{availableAmount}, 
-            version_number = #{versionNumber}, 
-            updated_at = #{updatedAt}
-        WHERE balance_id = #{balanceId}
+        SET available_amount = #{balance.availableAmount}, 
+            version_number = #{balance.versionNumber}, 
+            updated_at = #{balance.updatedAt}
+        WHERE balance_id = #{balance.balanceId} AND version_number = #{oldVersionNumber}
     </update>
 
 </mapper> 

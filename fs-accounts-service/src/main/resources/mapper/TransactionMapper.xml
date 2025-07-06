@@ -2,33 +2,44 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.tuum.fsaccountsservice.mapper.TransactionMapper">
 
-    <resultMap id="TransactionResultMap" type="com.tuum.fsaccountsservice.model.Transaction">
+    <resultMap id="TransactionResultMap" type="com.tuum.common.domain.entities.Transaction">
         <id column="transaction_id" property="transactionId"/>
         <result column="account_id" property="accountId"/>
+        <result column="balance_id" property="balanceId"/>
         <result column="amount" property="amount"/>
         <result column="currency" property="currency"/>
         <result column="direction" property="direction" typeHandler="org.apache.ibatis.type.EnumTypeHandler"/>
         <result column="description" property="description"/>
-        <result column="balance_after" property="balanceAfterTransaction"/>
+        <result column="balance_after_transaction" property="balanceAfterTransaction"/>
         <result column="status" property="status"/>
         <result column="idempotency_key" property="idempotencyKey"/>
         <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
     </resultMap>
 
     <select id="findTransactionById" resultMap="TransactionResultMap">
-        SELECT transaction_id, account_id, amount, currency, direction, description, balance_after, status, idempotency_key, created_at 
+        SELECT transaction_id, account_id, balance_id, amount, currency, direction, description, balance_after_transaction, status, idempotency_key, created_at, updated_at 
         FROM transactions WHERE transaction_id = #{transactionId}
     </select>
 
     <select id="findTransactionsByAccountId" resultMap="TransactionResultMap">
-        SELECT transaction_id, account_id, amount, currency, direction, description, balance_after, status, idempotency_key, created_at 
+        SELECT transaction_id, account_id, balance_id, amount, currency, direction, description, balance_after_transaction, status, idempotency_key, created_at, updated_at 
         FROM transactions WHERE account_id = #{accountId}
         ORDER BY created_at DESC
     </select>
 
     <select id="findAllTransactions" resultMap="TransactionResultMap">
-        SELECT transaction_id, account_id, amount, currency, direction, description, balance_after, status, idempotency_key, created_at 
+        SELECT transaction_id, account_id, balance_id, amount, currency, direction, description, balance_after_transaction, status, idempotency_key, created_at, updated_at 
         FROM transactions ORDER BY created_at DESC
+    </select>
+
+    <select id="existsTransactionByIdempotencyKey" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM transactions WHERE idempotency_key = #{idempotencyKey})
+    </select>
+
+    <select id="findTransactionByIdempotencyKey" resultMap="TransactionResultMap">
+        SELECT transaction_id, account_id, balance_id, amount, currency, direction, description, balance_after_transaction, status, idempotency_key, created_at, updated_at 
+        FROM transactions WHERE idempotency_key = #{idempotencyKey}
     </select>
 
 </mapper> 

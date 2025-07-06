@@ -20,28 +20,11 @@ public class OpenApiConfig {
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Tuum FS Accounts Service API")
+                        .title("Tuum Core Banking API")
                         .description("""
                                 ## Core Banking Microservice API
                                 
-                                This service provides comprehensive account and transaction management capabilities for the Tuum core banking system.
-                                
-                                ### Key Features:
-                                - **Account Management**: Create and manage customer accounts with multiple currencies
-                                - **Transaction Processing**: Process financial transactions with real-time validation
-                                - **Balance Management**: Track account balances across different currencies
-                                - **Event-Driven Architecture**: Asynchronous processing with RabbitMQ integration
-                                - **WebSocket Notifications**: Real-time transaction status updates
-                                - **Idempotency Support**: Safe retry mechanisms for all operations
-                                
-                                ### Architecture:
-                                - **Database**: PostgreSQL with MyBatis ORM
-                                - **Messaging**: RabbitMQ for event publishing
-                                - **Real-time**: WebSocket for live notifications
-                                - **API**: RESTful endpoints with comprehensive validation
-                                
-                                ### Authentication:
-                                Currently using Idempotency-Key header for request deduplication.
+                                This API provides comprehensive banking functionality including:
                                 """)
                         .version("1.0.0")
                         .contact(new Contact()

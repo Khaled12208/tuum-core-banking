@@ -1,19 +1,26 @@
 package com.tuum.fsaccountsservice.controller;
 
-import com.tuum.fsaccountsservice.dto.AccountProcessedEvent;
-import com.tuum.fsaccountsservice.dto.CreateAccountRequest;
-import com.tuum.fsaccountsservice.exception.ResourceNotFoundException;
-import com.tuum.fsaccountsservice.model.Account;
+import com.tuum.common.domain.entities.Account;
+import com.tuum.common.domain.entities.Balance;
+import com.tuum.fsaccountsservice.dto.requests.CreateAccountRequest;
+import com.tuum.fsaccountsservice.dto.resonse.AccountResponse;
+import com.tuum.fsaccountsservice.util.DtoMapper;
+import com.tuum.common.exception.BusinessException;
+import com.tuum.common.dto.ErrorResponse;
+
 import com.tuum.fsaccountsservice.service.AccountService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.ConstraintViolationException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,25 +31,88 @@ import java.util.List;
 @RequestMapping("/accounts")
 @RequiredArgsConstructor
 @Slf4j
-@Tag(name = "Accounts", description = "Endpoints for account management")
+@Tag(name = "Account Management", description = "APIs for managing customer accounts")
 public class AccountController {
 
     private final AccountService accountService;
 
-    @Operation(summary = "Create a new account", description = "Creates a new account with specified currencies and waits for processing. Handles idempotency and concurrency.")
-    @ApiResponses(value = {
-        @ApiResponse(responseCode = "201", description = "Account created successfully", content = @Content(schema = @Schema(implementation = AccountProcessedEvent.class))),
-        @ApiResponse(responseCode = "400", description = "Business or validation error", content = @Content),
-        @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content)
-    })
     @PostMapping
-    public ResponseEntity<AccountProcessedEvent> createAccount(
-            @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Account creation request", required = true, content = @Content(schema = @Schema(implementation = CreateAccountRequest.class)))
+    @Operation(
+        summary = "Create a new account",
+        description = "Creates a new customer account with specified currencies. Requires idempotency key to prevent duplicate processing."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "201",
+            description = "Account created successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = AccountResponse.class),
+                examples = @ExampleObject(
+                    name = "Success Response",
+                    value = """
+                    {
+                        "accountId": "ACC12345678",
+                        "customerId": "CUST001",
+                        "country": "EE",
+                        "balances": [
+                            {
+                                "balanceId": "BAL12345678",
+                                "accountId": "ACC12345678",
+                                "currency": "EUR",
+                                "availableAmount": 0.00,
+                                "createdAt": "2024-01-15T10:30:00",
+                                "updatedAt": "2024-01-15T10:30:00"
+                            }
+                        ],
+                        "createdAt": "2024-01-15T10:30:00",
+                        "updatedAt": "2024-01-15T10:30:00"
+                    }
+                    """
+                )
+            )
+        ),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Bad request - validation error",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "409",
+            description = "Conflict - account already exists or duplicate request",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "500",
+            description = "Internal server error",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        )
+    })
+    @SecurityRequirement(name = "IdempotencyKey")
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<AccountResponse> createAccount(
+            @Parameter(description = "Account creation request", required = true)
             @RequestBody CreateAccountRequest request,
-            @Parameter(description = "Idempotency key for safe retries", required = false, example = "unique-key-123")
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+            @Parameter(description = "Unique key to prevent duplicate processing", required = true, example = "req-123456")
+            @RequestHeader(value = "Idempotency-Key") String idempotencyKey) {
+        
         log.info("Received request to create account for customer: {}", request.getCustomerId());
-        AccountProcessedEvent result = accountService.createAccount(request, idempotencyKey);
+
+        if (idempotencyKey == null || idempotencyKey.trim().isEmpty()) {
+            log.error("Idempotency-Key is missing");
+            throw new BusinessException("Idempotency-Key is missing");
+        }
+        
+        AccountResponse result = accountService.createAccount(request, idempotencyKey);
         log.info("Account creation result: {}", result);
         if (result == null) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
@@ -50,63 +120,108 @@ public class AccountController {
         return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
 
-    @Operation(summary = "Get account by ID", description = "Returns a single account by its ID.")
-    @ApiResponses(value = {
-        @ApiResponse(responseCode = "200", description = "Account found", content = @Content(schema = @Schema(implementation = Account.class))),
-        @ApiResponse(responseCode = "404", description = "Account not found", content = @Content),
-        @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content)
-    })
     @GetMapping("/{accountId}")
-    public ResponseEntity<Account> getAccount(
-            @Parameter(description = "Account ID", required = true, example = "ACCD92D2D8E")
+    @Operation(
+        summary = "Get account by ID",
+        description = "Retrieves account information including balances for all currencies"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Account found successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = AccountResponse.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Account not found",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        )
+    })
+    public ResponseEntity<AccountResponse> getAccount(
+            @Parameter(description = "Account identifier", required = true, example = "ACC12345678")
             @PathVariable String accountId) {
-        log.info("Received request to get account: {}", accountId);
-        Account account = accountService.getAccount(accountId);
-        if (account == null) {
-            throw new ResourceNotFoundException("Account not found with ID: " + accountId);
-        }
-        return ResponseEntity.ok(account);
+        Account account = accountService.getAccount(accountId); // Already includes balances
+        AccountResponse response = DtoMapper.toAccountResponse(account);
+        return ResponseEntity.ok(response);
     }
 
-    @Operation(summary = "Get accounts by customer ID", description = "Returns all accounts for a given customer ID.")
-    @ApiResponses(value = {
-        @ApiResponse(responseCode = "200", description = "List of accounts", content = @Content(schema = @Schema(implementation = Account.class))),
-        @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content)
-    })
+
     @GetMapping("/customer/{customerId}")
-    public ResponseEntity<List<Account>> getAccountsByCustomerId(
-            @Parameter(description = "Customer ID", required = true, example = "CUST001")
+    @Operation(
+        summary = "Get accounts by customer ID",
+        description = "Retrieves all accounts for a specific customer"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Accounts found successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = AccountResponse.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Customer not found",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        )
+    })
+    public ResponseEntity<List<AccountResponse>> getAccountsByCustomerId(
+            @Parameter(description = "Customer identifier", required = true, example = "CUST001")
             @PathVariable String customerId) {
-        log.info("Received request to get accounts for customer: {}", customerId);
         List<Account> accounts = accountService.getAccountsByCustomerId(customerId);
-        return ResponseEntity.ok(accounts);
+        List<AccountResponse> responses = accounts.stream()
+                .map(DtoMapper::toAccountResponse)
+                .toList();
+        return ResponseEntity.ok(responses);
     }
-
-    @Operation(summary = "Get all accounts", description = "Returns all accounts in the system.")
-    @ApiResponses(value = {
-        @ApiResponse(responseCode = "200", description = "List of all accounts", content = @Content(schema = @Schema(implementation = Account.class))),
-        @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content)
-    })
     @GetMapping
-    public ResponseEntity<List<Account>> getAllAccounts() {
-        log.info("Received request to get all accounts");
+    @Operation(
+        summary = "Get all accounts",
+        description = "Retrieves all accounts in the system"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Accounts retrieved successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = AccountResponse.class)
+            )
+        )
+    })
+    public ResponseEntity<List<AccountResponse>> getAllAccounts() {
         List<Account> accounts = accountService.getAllAccounts();
-        return ResponseEntity.ok(accounts);
+        List<AccountResponse> responses = accounts.stream()
+                .map(DtoMapper::toAccountResponse)
+                .toList();
+        return ResponseEntity.ok(responses);
     }
 
-    @Operation(summary = "Search accounts by currency and account ID", description = "Returns accounts filtered by currency and account ID.")
-    @ApiResponses(value = {
-        @ApiResponse(responseCode = "200", description = "List of filtered accounts", content = @Content(schema = @Schema(implementation = Account.class))),
-        @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content)
-    })
-    @GetMapping("/search")
-    public ResponseEntity<List<Account>> getAccountsByCurrencyAndAccountId(
-            @Parameter(description = "Currency to filter by", required = true, example = "EUR")
-            @RequestParam String currency,
-            @Parameter(description = "Account ID to filter by", required = true, example = "ACCD92D2D8E")
-            @RequestParam String accountId) {
-        log.info("Received request to get accounts filtered by currency: {} and accountId: {}", currency, accountId);
-        List<Account> accounts = accountService.getAccountsByCurrencyAndAccountId(currency, accountId);
-        return ResponseEntity.ok(accounts);
-    }
+//    @GetMapping("/search")
+//    public ResponseEntity<List<AccountResponse>> getAccountsByCurrencyAndAccountId(
+//            @RequestParam String currency,
+//            @RequestParam String accountId) {
+//        log.info("Received request to get accounts filtered by currency: {} and accountId: {}", currency, accountId);
+//        List<Account> accounts = accountService.getAllAccounts().stream()
+//                .filter(account -> accountId.equals(account.getAccountId()))
+//                .toList();
+//        List<AccountResponse> responses = accounts.stream()
+//                .map(account -> {
+//                    List<Balance> balances = accountService.getAccountBalances(account.getAccountId());
+//                    return DtoMapper.toAccountResponse(account, balances);
+//                })
+//                .toList();
+//
+//        return ResponseEntity.ok(responses);
+//    }
 } 

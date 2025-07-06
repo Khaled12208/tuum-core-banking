@@ -3,13 +3,13 @@
 <mapper namespace="com.tuum.fsaccountsservice.mapper.AccountMapper">
 
     <!-- Result map for Account with nested Balance collection -->
-    <resultMap id="AccountWithBalancesResultMap" type="com.tuum.fsaccountsservice.model.Account">
+    <resultMap id="AccountWithBalancesResultMap" type="com.tuum.common.domain.entities.Account">
         <id column="account_id" property="accountId"/>
         <result column="customer_id" property="customerId"/>
         <result column="country" property="country"/>
         <result column="created_at" property="createdAt"/>
         <result column="updated_at" property="updatedAt"/>
-        <collection property="balances" ofType="com.tuum.fsaccountsservice.model.Balance" javaType="java.util.ArrayList">
+        <collection property="balances" ofType="com.tuum.common.domain.entities.Balance" javaType="java.util.ArrayList">
             <id column="balance_id" property="balanceId"/>
             <result column="balance_account_id" property="accountId"/>
             <result column="currency" property="currency"/>
@@ -21,7 +21,7 @@
     </resultMap>
 
     <!-- Simple result map for Account without balances -->
-    <resultMap id="AccountResultMap" type="com.tuum.fsaccountsservice.model.Account">
+    <resultMap id="AccountResultMap" type="com.tuum.common.domain.entities.Account">
         <id column="account_id" property="accountId"/>
         <result column="customer_id" property="customerId"/>
         <result column="country" property="country"/>
@@ -110,6 +110,19 @@
         INNER JOIN balances b ON a.account_id = b.account_id
         WHERE b.currency = #{currency} AND a.account_id = #{accountId}
         ORDER BY a.created_at DESC
+    </select>
+
+    <select id="existsAccountById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM accounts WHERE account_id = #{accountId})
+    </select>
+
+    <select id="existsAccountByIdempotencyKey" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM accounts WHERE idempotency_key = #{idempotencyKey})
+    </select>
+
+    <select id="findAccountByIdempotencyKey" resultMap="AccountResultMap">
+        SELECT account_id, customer_id, country, idempotency_key, created_at, updated_at
+        FROM accounts WHERE idempotency_key = #{idempotencyKey}
     </select>
 
 </mapper> 

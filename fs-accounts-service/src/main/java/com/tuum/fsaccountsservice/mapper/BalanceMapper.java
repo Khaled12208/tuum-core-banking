@@ -1,6 +1,6 @@
 package com.tuum.fsaccountsservice.mapper;
 
-import com.tuum.fsaccountsservice.model.Balance;
+import com.tuum.common.domain.entities.Balance;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 

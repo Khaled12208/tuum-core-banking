@@ -1,6 +1,6 @@
 package com.tuum.fsaccountsservice.mapper;
 
-import com.tuum.fsaccountsservice.model.Account;
+import com.tuum.common.domain.entities.Account;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -16,4 +16,8 @@ public interface AccountMapper {
     List<Account> findAccountsByCurrencyAndAccountId(@Param("currency") String currency, @Param("accountId") String accountId);
 
     List<Account> findAccountsByCustomerId(String customerId);
+
+    boolean existsAccountById(@Param("accountId") String accountId);
+    boolean existsAccountByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
+    Account findAccountByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
 } 

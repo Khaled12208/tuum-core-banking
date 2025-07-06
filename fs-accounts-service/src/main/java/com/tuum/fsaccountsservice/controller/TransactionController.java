@@ -1,111 +1,216 @@
 package com.tuum.fsaccountsservice.controller;
 
-import com.tuum.fsaccountsservice.dto.CreateTransactionRequest;
-import com.tuum.fsaccountsservice.dto.TransactionProcessedEvent;
-import com.tuum.fsaccountsservice.exception.BusinessException;
-import com.tuum.fsaccountsservice.model.Transaction;
+import com.tuum.common.domain.entities.Transaction;
+import com.tuum.fsaccountsservice.dto.requests.CreateTransactionRequest;
+import com.tuum.common.exception.BusinessException;
+import com.tuum.common.exception.InsufficientFundsException;
+import com.tuum.common.exception.ResourceNotFoundException;
 import com.tuum.fsaccountsservice.service.TransactionService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import com.tuum.fsaccountsservice.dto.resonse.TransactionResponse;
+import com.tuum.common.dto.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.http.HttpStatus;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.validation.Valid;
 import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/transactions")
 @RequiredArgsConstructor
 @Slf4j
-@Tag(name = "Transactions", description = "Endpoints for transaction management")
+@Tag(name = "Transaction Management", description = "APIs for managing financial transactions")
 public class TransactionController {
 
     private final TransactionService transactionService;
 
-    /**
-     * Creates a transaction asynchronously and waits for completion
-     * Handles concurrent transactions and prevents duplicate submissions using idempotency keys
-     */
-    @Operation(summary = "Create a new transaction", description = "Creates a transaction and waits for processing. Handles idempotency and concurrency.")
-    @ApiResponses(value = {
-        @ApiResponse(responseCode = "201", description = "Transaction created successfully", content = @Content(schema = @Schema(implementation = TransactionProcessedEvent.class))),
-        @ApiResponse(responseCode = "400", description = "Business or validation error", content = @Content),
-        @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content)
-    })
     @PostMapping
-    public ResponseEntity<TransactionProcessedEvent> createTransaction(
-            @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Transaction creation request", required = true, content = @Content(schema = @Schema(implementation = CreateTransactionRequest.class)))
-            @Valid @RequestBody CreateTransactionRequest request,
-            @Parameter(description = "Idempotency key for safe retries", required = false, example = "unique-key-123")
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+    @Operation(
+        summary = "Create a new transaction",
+        description = "Creates a new financial transaction (deposit or withdrawal) for an account. Requires idempotency key to prevent duplicate processing."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Transaction created successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = TransactionResponse.class),
+                examples = @ExampleObject(
+                    name = "Success Response",
+                    value = """
+                    {
+                        "transactionId": "TXN12345678",
+                        "accountId": "ACC12345678",
+                        "balanceId": "BAL12345678",
+                        "amount": 100.50,
+                        "currency": "EUR",
+                        "direction": "IN",
+                        "description": "Payment for invoice #1234",
+                        "balanceAfterTransaction": 1100.50,
+                        "status": "COMPLETED",
+                        "idempotencyKey": "req-123456",
+                        "balance": {
+                            "balanceId": "BAL12345678",
+                            "accountId": "ACC12345678",
+                            "currency": "EUR",
+                            "availableAmount": 1100.50,
+                            "createdAt": "2024-01-15T10:30:00",
+                            "updatedAt": "2024-01-15T10:35:00"
+                        },
+                        "createdAt": "2024-01-15T10:35:00",
+                        "updatedAt": "2024-01-15T10:35:00"
+                    }
+                    """
+                )
+            )
+        ),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Bad request - validation error or insufficient funds",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Account or balance not found",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "409",
+            description = "Conflict - transaction already exists or duplicate request",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "500",
+            description = "Internal server error",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        )
+    })
+    @SecurityRequirement(name = "IdempotencyKey")
+    public ResponseEntity<TransactionResponse> createTransaction(
+            @Parameter(description = "Transaction creation request", required = true)
+            @RequestBody CreateTransactionRequest request,
+            @Parameter(description = "Unique key to prevent duplicate processing", required = true, example = "req-123456")
+            @RequestHeader(value = "Idempotency-Key") String idempotencyKey) {
         
-        log.info("Received request to create transaction for account: {}", request.getAccountId());
-        
-        // Generate idempotency key if not provided
+        log.info("Creating transaction for account: {}", request.getAccountId());
+
         if (idempotencyKey == null || idempotencyKey.trim().isEmpty()) {
-            idempotencyKey = UUID.randomUUID().toString();
-            log.info("Generated idempotency key: {}", idempotencyKey);
+            log.error("Idempotency-Key is missing");
+            throw new BusinessException("Idempotency-Key is missing");
         }
-        
+
         try {
-            TransactionProcessedEvent result = transactionService.createTransaction(request, idempotencyKey);
-            return ResponseEntity.status(HttpStatus.CREATED).body(result);
+
+            TransactionResponse result = transactionService.createTransaction(request, idempotencyKey);
+            return ResponseEntity.ok(result);
+        } catch (InsufficientFundsException e) {
+            log.warn("Insufficient funds for transaction: {}", e.getMessage());
+            throw e;
+        } catch (BusinessException e) {
+            log.error("Business error creating transaction: {}", e.getMessage());
+            throw e;
         } catch (Exception e) {
-            log.error("Error creating transaction: {}", e.getMessage(), e);
+            log.error("Unexpected error creating transaction: {}", e.getMessage(), e);
             throw new BusinessException("Failed to create transaction: " + e.getMessage());
         }
     }
 
-    @Operation(summary = "Get all transactions for an account", description = "Returns all transactions for a given account ID.")
-    @ApiResponses(value = {
-        @ApiResponse(responseCode = "200", description = "List of transactions", content = @Content(schema = @Schema(implementation = Transaction.class))),
-        @ApiResponse(responseCode = "400", description = "Business or validation error", content = @Content),
-        @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content)
-    })
     @GetMapping("/account/{accountId}")
-    public ResponseEntity<List<Transaction>> getTransactionsByAccountId(
-            @Parameter(description = "Account ID", required = true, example = "ACCD92D2D8E")
+    @Operation(
+        summary = "Get transactions by account ID",
+        description = "Retrieves all transactions for a specific account"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Transactions found successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = Transaction.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Account not found",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        )
+    })
+    public ResponseEntity<List<Transaction>> getAccountTransactions(
+            @Parameter(description = "Account identifier", required = true, example = "ACC12345678")
             @PathVariable String accountId) {
-        log.info("Getting transactions for account: {}", accountId);
+        log.info("Retrieving transactions for account: {}", accountId);
+        
         try {
-            List<Transaction> transactions = transactionService.getTransactionsByAccountId(accountId);
-            if (transactions == null) {
-                return ResponseEntity.ok(List.of()); // Return empty list instead of null
-            }
+            List<Transaction> transactions = transactionService.getAccountTransactions(accountId);
             return ResponseEntity.ok(transactions);
+        } catch (ResourceNotFoundException e) {
+            log.warn("Account not found: {}", accountId);
+            throw e;
         } catch (Exception e) {
             log.error("Error retrieving transactions for account: {}", accountId, e);
             throw new BusinessException("Failed to retrieve transactions: " + e.getMessage());
         }
     }
 
-    @Operation(summary = "Get a transaction by ID", description = "Returns a single transaction by its ID.")
-    @ApiResponses(value = {
-        @ApiResponse(responseCode = "200", description = "Transaction found", content = @Content(schema = @Schema(implementation = Transaction.class))),
-        @ApiResponse(responseCode = "404", description = "Transaction not found", content = @Content),
-        @ApiResponse(responseCode = "400", description = "Business or validation error", content = @Content),
-        @ApiResponse(responseCode = "500", description = "Internal server error", content = @Content)
-    })
     @GetMapping("/{transactionId}")
-    public ResponseEntity<Transaction> getTransactionById(
-            @Parameter(description = "Transaction ID", required = true, example = "a9cf3df3-2a6f-41b5-8825-815dd29a7fcd")
+    @Operation(
+        summary = "Get transaction by ID",
+        description = "Retrieves a specific transaction by its identifier"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Transaction found successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = Transaction.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Transaction not found",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ErrorResponse.class)
+            )
+        )
+    })
+    public ResponseEntity<Transaction> getTransaction(
+            @Parameter(description = "Transaction identifier", required = true, example = "TXN12345678")
             @PathVariable String transactionId) {
-        log.info("Getting transaction by ID: {}", transactionId);
+        log.info("Retrieving transaction: {}", transactionId);
+        
         try {
-            Transaction transaction = transactionService.getTransactionById(transactionId);
-            if (transaction == null) {
-                return ResponseEntity.notFound().build();
-            }
+            Transaction transaction = transactionService.getTransaction(transactionId);
             return ResponseEntity.ok(transaction);
+        } catch (ResourceNotFoundException e) {
+            log.warn("Transaction not found: {}", transactionId);
+            throw e;
         } catch (Exception e) {
             log.error("Error retrieving transaction: {}", transactionId, e);
             throw new BusinessException("Failed to retrieve transaction: " + e.getMessage());

@@ -10,6 +10,21 @@ spring:
     username: tuum_user
     password: tuum_password
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    properties:
+      hibernate:
+        connection:
+          isolation_level: SERIALIZABLE
+        jdbc:
+          batch_size: 20
+          fetch_size: 20
 
   rabbitmq:
     host: localhost
@@ -19,12 +34,6 @@ spring:
     virtual-host: /
     listener:
       simple:
-        retry:
-          enabled: true
-          initial-interval: 1000
-          max-attempts: 3
-          max-interval: 10000
-          multiplier: 2.0
         default-requeue-rejected: false
     # Disable auto-configuration of Jackson2JsonMessageConverter
     message-converter: simple
@@ -34,9 +43,19 @@ mybatis:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: com.tuum.csaccountseventsconsumer.model
+  type-aliases-package: com.tuum.common.domain.entities
 
 logging:
   level:
     com.tuum.csaccountseventsconsumer: DEBUG
     org.springframework.amqp: DEBUG
+
+# Actuator configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

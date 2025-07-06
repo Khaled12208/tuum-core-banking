@@ -1,24 +1,27 @@
 package com.tuum.csaccountseventsconsumer.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.tuum.csaccountseventsconsumer.dto.TransactionCreatedEvent;
+import com.tuum.common.domain.entities.Balance;
+import com.tuum.common.domain.entities.Transaction;
+import com.tuum.common.domain.entities.ProcessedMessage;
+import com.tuum.common.dto.mq.CreateTransactionEvent;
+import com.tuum.common.dto.mq.MQMessageData;
+import com.tuum.common.types.RabbitMQConfig;
+import com.tuum.common.exception.ProcessingException;
+import com.tuum.common.types.ErrorCode;
+import com.tuum.common.types.TransactionDirection;
+import com.tuum.common.types.TransactionStatus;
 import com.tuum.csaccountseventsconsumer.mapper.BalanceMapper;
 import com.tuum.csaccountseventsconsumer.mapper.ProcessedMessageMapper;
 import com.tuum.csaccountseventsconsumer.mapper.TransactionMapper;
-import com.tuum.csaccountseventsconsumer.model.Balance;
-import com.tuum.csaccountseventsconsumer.model.ProcessedMessage;
-import com.tuum.csaccountseventsconsumer.model.Transaction;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -30,173 +33,168 @@ public class TransactionEventService {
     private final ProcessedMessageMapper processedMessageMapper;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
-    private final AmqpTemplate amqpTemplate;
 
     @Transactional
-    public void processTransactionCreatedEvent(String message) {
+    public void processTransactionCreatedEvent(MQMessageData messageData) {
         try {
-            log.info("Processing transaction created event: {}", message);
+            CreateTransactionEvent event = objectMapper.readValue(messageData.getMessageBody(), CreateTransactionEvent.class);
             
-            // Parse the event
-            TransactionCreatedEvent event = objectMapper.readValue(message, TransactionCreatedEvent.class);
-            
-            // Check if already processed using idempotency key
-            String messageId = event.getIdempotencyKey();
-            if (processedMessageMapper.existsProcessedMessage(messageId)) {
-                log.info("Transaction event already processed with idempotency key: {}", messageId);
-                // Get the existing transaction to return the same response
-                Transaction existingTransaction = transactionMapper.findTransactionByIdempotencyKey(event.getIdempotencyKey());
-                if (existingTransaction != null) {
-                    publishTransactionSuccessNotification(event, existingTransaction.getBalanceAfter(), message);
-                }
-                return;
-            }
-            
-            // Check if transaction already exists using idempotency key
-            if (transactionMapper.existsTransactionByIdempotencyKey(event.getIdempotencyKey())) {
-                log.info("Transaction already exists with idempotency key: {}", event.getIdempotencyKey());
-                // Get the existing transaction to return the same response
-                Transaction existingTransaction = transactionMapper.findTransactionByIdempotencyKey(event.getIdempotencyKey());
-                if (existingTransaction != null) {
-                    publishTransactionSuccessNotification(event, existingTransaction.getBalanceAfter(), message);
-                }
-                return;
-            }
-            
-            // Get current balance for the account and currency
-            Balance currentBalance = balanceMapper.findBalanceByAccountIdAndCurrency(
-                event.getAccountId(), event.getCurrency());
-            
-            if (currentBalance == null) {
-                String errorMsg = "No " + event.getCurrency() + " balance found for account " + event.getAccountId();
-                log.error(errorMsg);
-                publishTransactionErrorNotification(event, errorMsg, message);
-                return;
-            }
-            
-            // Calculate new balance
-            BigDecimal newBalance;
-            if ("IN".equals(event.getDirection())) {
-                newBalance = currentBalance.getAvailableAmount().add(event.getAmount());
-            } else if ("OUT".equals(event.getDirection())) {
-                // Check for insufficient funds
-                if (currentBalance.getAvailableAmount().compareTo(event.getAmount()) < 0) {
-                    String errorMsg = "Insufficient " + event.getCurrency() + " funds. Available: " + 
-                                    currentBalance.getAvailableAmount() + " " + event.getCurrency() + 
-                                    ", Required: " + event.getAmount() + " " + event.getCurrency();
-                    log.error(errorMsg);
-                    publishTransactionErrorNotification(event, errorMsg, message);
-                    return;
-                }
-                newBalance = currentBalance.getAvailableAmount().subtract(event.getAmount());
-            } else {
-                String errorMsg = "Invalid transaction direction: " + event.getDirection() + ". Must be 'IN' or 'OUT'";
-                log.error(errorMsg);
-                publishTransactionErrorNotification(event, errorMsg, message);
-                return;
-            }
-            
-            // Update balance
-            currentBalance.setAvailableAmount(newBalance);
-            currentBalance.setVersionNumber(currentBalance.getVersionNumber() + 1);
-            currentBalance.setUpdatedAt(LocalDateTime.now());
-            balanceMapper.updateBalance(currentBalance);
-            
-            // Create transaction
-            Transaction transaction = new Transaction();
-            transaction.setTransactionId(event.getTransactionId());
-            transaction.setAccountId(event.getAccountId());
-            transaction.setAmount(event.getAmount());
-            transaction.setCurrency(event.getCurrency());
-            transaction.setDirection(event.getDirection());
-            transaction.setDescription(event.getDescription());
-            transaction.setBalanceAfter(newBalance);
-            transaction.setStatus("COMPLETED");
-            transaction.setIdempotencyKey(event.getIdempotencyKey());
-            transaction.setCreatedAt(LocalDateTime.now());
-            
-            transactionMapper.insertTransaction(transaction);
-            log.info("Successfully created transaction: {} with new balance: {}", 
-                    event.getTransactionId(), newBalance);
-            
-            // Record processed message
-            ProcessedMessage processedMessage = new ProcessedMessage();
-            processedMessage.setMessageId(messageId);
-            processedMessage.setMessageType("CREATE_TRANSACTION");
-            processedMessage.setProcessedAt(LocalDateTime.now());
-            processedMessage.setResultData("{\"status\":\"SUCCESS\",\"transactionId\":\"" + event.getTransactionId() + "\"}");
-            
-            processedMessageMapper.insertProcessedMessage(processedMessage);
-            
-            // Publish success notification with all required fields
-            publishTransactionSuccessNotification(event, newBalance, message);
-            
-        } catch (Exception e) {
-            log.error("Error processing transaction created event: {}", message, e);
-            try {
-                TransactionCreatedEvent event = objectMapper.readValue(message, TransactionCreatedEvent.class);
-                publishTransactionErrorNotification(event, e.getMessage(), message);
-            } catch (Exception ex) {
-                log.error("Failed to publish transaction error notification", ex);
-            }
-        }
-    }
-    
-    private void publishTransactionSuccessNotification(TransactionCreatedEvent event, BigDecimal balanceAfterTransaction, String originalMessage) {
-        try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("transactionId", event.getTransactionId());
-            notification.put("accountId", event.getAccountId());
-            notification.put("amount", event.getAmount());
-            notification.put("currency", event.getCurrency());
-            notification.put("direction", event.getDirection());
-            notification.put("description", event.getDescription());
-            notification.put("idempotencyKey", event.getIdempotencyKey());
-            notification.put("balanceAfterTransaction", balanceAfterTransaction);
-            notification.put("status", "COMPLETED");
-            notification.put("processedAt", LocalDateTime.now().toString());
 
-            String message = objectMapper.writeValueAsString(notification);
             
-            // Publish directly to the transactions notifications queue
-            amqpTemplate.convertAndSend(
-                "tuum.banking", 
-                "transactions.notifications.success", 
-                message);
-            
-            log.info("Published detailed transaction success notification for transaction: {}", event.getTransactionId());
+            switch (messageData.getRequestType()) {
+                case CREATE:
+                    handleCreate(event, messageData);
+                    break;
+                default:
+                    throw new ProcessingException(
+                            "Non supported process",
+                            RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
+                            RabbitMQConfig.TRANSACTIONS_ERRORS_ROUTING_KEY.getValue(),
+                            "TRANSACTION_PROCESSING_ERROR",
+                            messageData.getRequestId(),
+                            null
+                    );
+            }
         } catch (Exception e) {
-            log.error("Failed to publish transaction success notification for transaction: {}", event.getTransactionId(), e);
+            log.error("Error processing transaction: {}, idempotencyKey: {} , requestId: {}", e.getMessage(), messageData.getIdempotencyKey(), messageData.getRequestId());
+            notificationService.publishErrorResponse(RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(), RabbitMQConfig.TRANSACTIONS_ERROR_ROUTING_KEY.getValue(), messageData, ErrorCode.TRANSACTION_CREATION_FAILED, e.getMessage());
         }
     }
-    
-    private void publishTransactionErrorNotification(TransactionCreatedEvent event, String errorMessage, String originalMessage) {
-        try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("transactionId", event.getTransactionId());
-            notification.put("accountId", event.getAccountId());
-            notification.put("amount", event.getAmount());
-            notification.put("currency", event.getCurrency());
-            notification.put("direction", event.getDirection());
-            notification.put("description", event.getDescription());
-            notification.put("idempotencyKey", event.getIdempotencyKey());
-            notification.put("status", "ERROR");
-            notification.put("errorMessage", errorMessage);
-            notification.put("processedAt", LocalDateTime.now().toString());
 
-            String message = objectMapper.writeValueAsString(notification);
-            
-            log.info("Publishing error notification: {}", message);
-            
-            // Publish directly to the transactions errors queue
-            amqpTemplate.convertAndSend(
-                "tuum.banking", 
-                "transactions.errors.processing", 
-                message);
-            
-            log.info("Published detailed transaction error notification for transaction: {}", event.getTransactionId());
-        } catch (Exception e) {
-            log.error("Failed to publish transaction error notification for transaction: {}", event.getTransactionId(), e);
+    private void handleCreate(CreateTransactionEvent event, MQMessageData messageData) {
+        String messageId = Optional.ofNullable(event.getIdempotencyKey()).orElse(event.getTransactionId());
+
+        // Check database as source of truth
+        if (processedMessageMapper.existsProcessedMessage(messageId)) {
+            log.info("Transaction already processed in database: {}", messageId);
+            publishSuccessNotificationForExistingTransaction(event.getAccountId(), messageData);
+            return;
+        }
+
+
+
+        if (transactionMapper.existsTransactionByIdempotencyKey(event.getIdempotencyKey())) {
+            log.warn("Transaction already exists with idempotency key: {}", event.getIdempotencyKey());
+            throw businessException(event, "TRANSACTION_ALREADY_EXISTS", "Transaction already exists");
+        }
+
+        Balance balance = balanceMapper.findBalanceByAccountIdAndCurrency(event.getAccountId(), event.getCurrency());
+
+        if (balance == null) {
+            throw businessException(event, "BALANCE_NOT_FOUND",
+                    "No " + event.getCurrency() + " balance found for account " + event.getAccountId());
+        }
+
+        // Set the balanceId in the event
+        event.setBalanceId(balance.getBalanceId());
+
+        BigDecimal newBalance = calculateNewBalance(balance, event);
+        updateBalance(balance, newBalance);
+
+        Transaction transaction = createAndInsertTransaction(event, newBalance);
+        
+        // Record the processed message as source of truth
+        recordProcessedMessage(messageId, event.getTransactionId(), event.getIdempotencyKey());
+
+        notificationService.publishSuccessNotification(
+                RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
+                RabbitMQConfig.TRANSACTIONS_PROCESSED_ROUTING_KEY.getValue(),
+                messageData.getRequestType().getCode(),
+                "SUCCESS",
+                messageData.getRequestId(),
+                transaction,
+                messageData.getIdempotencyKey(),
+                null
+        );
+
+        log.info("Transaction processed successfully: {}", event.getTransactionId());
+    }
+
+    private BigDecimal calculateNewBalance(Balance balance, CreateTransactionEvent event) {
+        if (TransactionDirection.IN == event.getDirection()) {
+            return balance.getAvailableAmount().add(event.getAmount());
+        } else if (TransactionDirection.OUT == event.getDirection()) {
+            if (balance.getAvailableAmount().compareTo(event.getAmount()) < 0) {
+                throw businessException(event, "INSUFFICIENT_FUNDS",
+                        "Available: " + balance.getAvailableAmount() + ", Required: " + event.getAmount());
+            }
+            return balance.getAvailableAmount().subtract(event.getAmount());
+        } else {
+            throw businessException(event, "INVALID_DIRECTION", "Must be IN or OUT");
         }
     }
-} 
+
+    private void updateBalance(Balance balance, BigDecimal newBalance) {
+        int oldVersionNumber = balance.getVersionNumber();
+        balance.setAvailableAmount(newBalance);
+        balance.setVersionNumber(balance.getVersionNumber() + 1);
+        balance.setUpdatedAt(LocalDateTime.now());
+        
+        int updatedRows = balanceMapper.updateBalance(balance, oldVersionNumber);
+        if (updatedRows == 0) {
+            throw new ProcessingException(
+                    "Balance was modified by another transaction. Please retry.",
+                    RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
+                    RabbitMQConfig.TRANSACTIONS_ERROR_ROUTING_KEY.getValue(),
+                    "CONCURRENT_MODIFICATION",
+                    balance.getAccountId(),
+                    null
+            );
+        }
+    }
+
+    private Transaction createAndInsertTransaction(CreateTransactionEvent event, BigDecimal newBalance) {
+        Transaction transaction = new Transaction();
+        transaction.setTransactionId(event.getTransactionId());
+        transaction.setAccountId(event.getAccountId());
+        transaction.setBalanceId(event.getBalanceId());
+        transaction.setAmount(event.getAmount());
+        transaction.setCurrency(event.getCurrency());
+        transaction.setDirection(event.getDirection());
+        transaction.setDescription(event.getDescription());
+        transaction.setBalanceAfterTransaction(newBalance);
+        transaction.setStatus(TransactionStatus.COMPLETED);
+        transaction.setIdempotencyKey(event.getIdempotencyKey());
+        transaction.setCreatedAt(LocalDateTime.now());
+        transaction.setUpdatedAt(LocalDateTime.now());
+        transactionMapper.insertTransaction(transaction);
+        return transaction;
+    }
+
+    private void recordProcessedMessage(String messageId, String transactionId, String idempotencyKey) {
+        ProcessedMessage processedMessage = new ProcessedMessage();
+        processedMessage.setMessageId(messageId);
+        processedMessage.setMessageType("CREATE_TRANSACTION");
+        processedMessage.setIdempotencyKey(idempotencyKey);
+        processedMessage.setProcessedAt(LocalDateTime.now());
+        processedMessage.setResultData("{\"status\":\"SUCCESS\",\"transactionId\":\"" + transactionId + "\"}");
+
+        processedMessageMapper.insertProcessedMessage(processedMessage);
+        log.info("Recorded processed message with ID: {}", messageId);
+    }
+
+    private void publishSuccessNotificationForExistingTransaction(String transactionID, MQMessageData messageData) {
+        Transaction existingTrans = transactionMapper.findTransactionById(transactionID);
+        notificationService.publishSuccessNotification(
+                RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
+                RabbitMQConfig.TRANSACTIONS_PROCESSED_ROUTING_KEY.getValue(),
+                messageData.getRequestType().getCode(),
+                "SUCCESS",
+                messageData.getRequestId(),
+                existingTrans,
+                messageData.getIdempotencyKey(),
+                null
+        );
+    }
+
+    private ProcessingException businessException(CreateTransactionEvent event, String errorCode, String errorMessage) {
+        return new ProcessingException(
+                errorMessage,
+                RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
+                RabbitMQConfig.TRANSACTIONS_ERROR_ROUTING_KEY.getValue(),
+                errorCode,
+                event.getAccountId(),
+                null
+        );
+    }
+}

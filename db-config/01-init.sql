@@ -1,109 +1,88 @@
--- Database initialization script for Tuum Core Banking
--- This script creates the complete schema for the banking system
-
--- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
 
--- Processed messages tracking table
-CREATE TABLE IF NOT EXISTS processed_messages (
-    message_id VARCHAR(100) PRIMARY KEY,
-    message_type VARCHAR(20) NOT NULL CHECK (message_type IN ('CREATE_ACCOUNT', 'CREATE_TRANSACTION')),
-    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    result_data JSONB,
-    CONSTRAINT idx_processed_at UNIQUE (processed_at)
-);
-
--- Create index for processed_at
-CREATE INDEX IF NOT EXISTS idx_processed_messages_processed_at ON processed_messages(processed_at);
+CREATE TYPE currency_enum AS ENUM ('EUR', 'SEK', 'GBP', 'USD');
+CREATE TYPE direction_enum AS ENUM ('IN', 'OUT');
+CREATE TYPE status_enum AS ENUM ('PENDING', 'COMPLETED', 'FAILED');
 
 -- Accounts table
 CREATE TABLE IF NOT EXISTS accounts (
     account_id VARCHAR(50) PRIMARY KEY,
     customer_id VARCHAR(50) NOT NULL,
-    country VARCHAR(3) NOT NULL, 
+    country VARCHAR(3) NOT NULL,
+    account_name VARCHAR(200),
+    account_type VARCHAR(50),
+    idempotency_key VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(idempotency_key)
 );
 
--- Create index for customer_id
-CREATE INDEX IF NOT EXISTS idx_accounts_customer_id ON accounts(customer_id);
-
--- Balances table (one record per currency per account)
+-- Balances table
 CREATE TABLE IF NOT EXISTS balances (
     balance_id VARCHAR(50) PRIMARY KEY,
     account_id VARCHAR(50) NOT NULL,
-    currency VARCHAR(4) NOT NULL CHECK (currency IN ('EUR', 'SEK', 'GBP', 'USD')),
-    available_amount DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-    version_number INT NOT NULL DEFAULT 1, -- Optimistic locking
+    currency currency_enum NOT NULL,
+    available_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    version_number INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_balances_account FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE,
-    CONSTRAINT unique_account_currency UNIQUE (account_id, currency),
-    CONSTRAINT check_positive_balance CHECK (available_amount >= 0) -- Ensure non-negative balances
+    FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE,
+    UNIQUE(account_id, currency)
 );
-
--- Create indexes for balances
-CREATE INDEX IF NOT EXISTS idx_balances_account_id ON balances(account_id);
-CREATE INDEX IF NOT EXISTS idx_balances_currency ON balances(currency);
 
 -- Transactions table
 CREATE TABLE IF NOT EXISTS transactions (
-    transaction_id VARCHAR(50) PRIMARY KEY, -- Use idempotency key from message
+    transaction_id VARCHAR(50) PRIMARY KEY,
     account_id VARCHAR(50) NOT NULL,
-    amount DECIMAL(15, 2) NOT NULL,
-    currency VARCHAR(4) NOT NULL CHECK (currency IN ('EUR', 'SEK', 'GBP', 'USD')),
-    direction VARCHAR(3) NOT NULL CHECK (direction IN ('IN', 'OUT')),
-    description VARCHAR(255) NOT NULL,
-    balance_after DECIMAL(15, 2) NOT NULL,
-    status VARCHAR(10) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'COMPLETED', 'FAILED')),
-    idempotency_key VARCHAR(100) NOT NULL, -- From queue message
+    balance_id VARCHAR(50) NOT NULL,
+    amount DECIMAL(15,2) NOT NULL,
+    currency currency_enum NOT NULL,
+    direction direction_enum NOT NULL,
+    description TEXT,
+    balance_after_transaction DECIMAL(15,2) NOT NULL,
+    status status_enum NOT NULL DEFAULT 'COMPLETED',
+    idempotency_key VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_transactions_account FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE,
-    CONSTRAINT unique_idempotency UNIQUE (idempotency_key),
-    CONSTRAINT check_positive_amount CHECK (amount > 0) -- Ensure positive transaction amounts
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE,
+    FOREIGN KEY (balance_id) REFERENCES balances(balance_id) ON DELETE CASCADE,
+    UNIQUE(idempotency_key)
 );
 
--- Create indexes for transactions
+-- Processed messages table for idempotency
+CREATE TABLE IF NOT EXISTS processed_messages (
+    id SERIAL PRIMARY KEY,
+    message_id VARCHAR(100) NOT NULL,
+    message_type VARCHAR(50) NOT NULL,
+    idempotency_key VARCHAR(100) NOT NULL,
+    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    result_data TEXT,
+    UNIQUE(idempotency_key)
+);
+
+-- Indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_accounts_customer_id ON accounts(customer_id);
+CREATE INDEX IF NOT EXISTS idx_balances_account_id ON balances(account_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at);
-CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
-CREATE INDEX IF NOT EXISTS idx_transactions_account_currency ON transactions(account_id, currency);
+CREATE INDEX IF NOT EXISTS idx_processed_messages_message_id ON processed_messages(message_id);
 
--- Update triggers for updated_at columns
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+-- Insert sample data for testing
+INSERT INTO accounts (account_id, customer_id, country, account_name, account_type, idempotency_key) VALUES
+('ACC123456', 'CUST001', 'EE', 'Test Account 1', 'SAVINGS', 'test-key-1'),
+('ACC789012', 'CUST002', 'SE', 'Test Account 2', 'CHECKING', 'test-key-2')
+ON CONFLICT (idempotency_key) DO NOTHING;
 
--- Create triggers for updated_at columns
-DROP TRIGGER IF EXISTS trg_update_updated_at_accounts ON accounts;
-CREATE TRIGGER trg_update_updated_at_accounts
-    BEFORE UPDATE ON accounts
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+INSERT INTO balances (balance_id, account_id, currency, available_amount, version_number) VALUES
+('BAL001', 'ACC123456', 'EUR', 1000.00, 1),
+('BAL002', 'ACC123456', 'USD', 500.00, 1),
+('BAL003', 'ACC789012', 'SEK', 2500.00, 1)
+ON CONFLICT (account_id, currency) DO NOTHING;
 
-DROP TRIGGER IF EXISTS trg_update_updated_at_balances ON balances;
-CREATE TRIGGER trg_update_updated_at_balances
-    BEFORE UPDATE ON balances
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
--- Sample data for testing
--- Insert sample accounts
-INSERT INTO accounts (account_id, customer_id, country) VALUES 
-    ('ACC001', 'CUST001', 'EST'),
-    ('ACC002', 'CUST001', 'SWE'),
-    ('ACC003', 'CUST002', 'GBR'),
-    ('ACC004', 'CUST003', 'USA')
-ON CONFLICT (account_id) DO NOTHING;
-
--- Insert sample balances
-INSERT INTO balances (balance_id, account_id, currency, available_amount) VALUES 
-    ('BAL001', 'ACC001', 'EUR', 1000.00),
-    ('BAL002', 'ACC002', 'SEK', 5000.00),
-    ('BAL003', 'ACC003', 'GBP', 750.00),
-    ('BAL004', 'ACC004', 'USD', 1200.00)
-ON CONFLICT (balance_id) DO NOTHING;
+-- Test data with international characters
+INSERT INTO accounts (account_id, customer_id, country, account_name, account_type, idempotency_key) VALUES
+('ACC345678', 'CUST003', 'EE', 'Eesti konto', 'SAVINGS', 'test-key-3'),
+('ACC901234', 'CUST004', 'SA', 'حساب تجريبي', 'CHECKING', 'test-key-4')
+ON CONFLICT (idempotency_key) DO NOTHING;

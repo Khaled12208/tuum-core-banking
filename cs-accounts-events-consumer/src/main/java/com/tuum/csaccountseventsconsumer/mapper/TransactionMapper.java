@@ -1,6 +1,6 @@
 package com.tuum.csaccountseventsconsumer.mapper;
 
-import com.tuum.csaccountseventsconsumer.model.Transaction;
+import com.tuum.common.domain.entities.Transaction;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 

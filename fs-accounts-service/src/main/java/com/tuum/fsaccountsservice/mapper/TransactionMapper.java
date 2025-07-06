@@ -1,6 +1,6 @@
 package com.tuum.fsaccountsservice.mapper;
 
-import com.tuum.fsaccountsservice.model.Transaction;
+import com.tuum.common.domain.entities.Transaction;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -14,4 +14,8 @@ public interface TransactionMapper {
     List<Transaction> findTransactionsByAccountId(@Param("accountId") String accountId);
     
     List<Transaction> findAllTransactions();
+    
+    boolean existsTransactionByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
+    
+    Transaction findTransactionByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
 } 

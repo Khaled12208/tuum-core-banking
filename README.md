@@ -1,8 +1,44 @@
 # Tuum Core Banking System
 
-A microservices-based core banking system built with Spring Boot, featuring event-driven architecture, real-time notifications, and robust transaction processing.
+This project is a **microservices-based core banking platform** designed to handle **account management** and **transaction processing** using an **event-driven architecture**. It is built with scalability, modularity, and eventual consistency in mind.
 
-## 🏗️ System Architecture
+- Follows **CQRS (Command Query Responsibility Segregation)**:
+  - **Queries**: Direct DB access for low-latency reads.
+  - **Commands**: Handled asynchronously via event publishing.
+- Built on a **semi-asynchronous architecture**:
+  - In a production-grade, fully async setup, commands would be fire-and-forget.
+  - In this implementation, some API calls **wait for completion notifications** before responding, to satisfy specific requirements.
+- **RabbitMQ** is used as the message broker.
+- Event publishing and response flow:
+  - Commands are published to `{entity}-create-queue`.
+  - Notifications or errors are received via `{entity}-notification-queue` or `{entity}-error-queue`.
+- A custom RabbitMQ listener:
+
+  - Listens for completion notifications.
+  - Completes the original request by processing the response.
+  - Designed to optionally notify clients via callback endpoints in future enhancements.
+
+- **Common Issues**
+
+  - Service won't start
+  - Database connection issues
+  - RabbitMQ connection issues: for liner
+  - common library is not compiling well
+  - cleaning the code
+
+- **Future-enactments**
+ - Exception handling should be better 
+ - using design pattern
+ - loggin 
+ - full ASYNC processing
+
+- ** Development Machine Performance for transcription endpoint **
+
+* Concurrent Test (5 requests): 5.0 requests/second
+* Average Response Time: 0.089 seconds ~89 milliseconds.
+* If each request takes 0.089s and they’re handled in parallel (concurrent), the system can handle 1/ 0.089s ≈11.24 requests/s
+
+## System Architecture
 
 ```mermaid
 graph TB
@@ -10,23 +46,23 @@ graph TB
         API[API Client]
         WS[WebSocket Client]
     end
-    
+
     subgraph "API Gateway Layer"
         FS[fs-accounts-service<br/>Port: 8084]
     end
-    
+
     subgraph "Message Broker"
         RMQ[RabbitMQ<br/>Port: 5672/15672]
     end
-    
+
     subgraph "Event Processing"
         CS[cs-accounts-events-consumer<br/>Port: 8082]
     end
-    
+
     subgraph "Data Layer"
         PG[(PostgreSQL<br/>Port: 5432)]
     end
-    
+
     API --> FS
     WS --> FS
     FS --> RMQ
@@ -34,109 +70,56 @@ graph TB
     CS --> PG
     CS --> RMQ
     RMQ --> FS
-    
+
     style FS fill:#e1f5fe
     style CS fill:#f3e5f5
     style RMQ fill:#fff3e0
     style PG fill:#e8f5e8
 ```
 
-## 📋 System Components
+## System Components
 
-| Component | Port | URL | Description | Technology |
-|-----------|------|-----|-------------|------------|
-| **fs-accounts-service** | 8084 | http://localhost:8084 | Main REST API service for account and transaction management | Spring Boot, WebSocket |
-| **cs-accounts-events-consumer** | 8082 | http://localhost:8082 | Event consumer for processing account and transaction events | Spring Boot, MyBatis |
-| **PostgreSQL Database** | 5432 | - | Primary database for accounts, balances, and transactions | PostgreSQL 15 |
-| **RabbitMQ AMQP** | 5672 | - | Message broker for event-driven communication | RabbitMQ 3.13.7 |
-| **RabbitMQ Management** | 15672 | http://localhost:15672 | Web UI for RabbitMQ monitoring and management | RabbitMQ Management |
-| **Swagger UI** | 8084 | http://localhost:8084/swagger-ui.html | API documentation and testing interface | SpringDoc OpenAPI |
+| Component                       | Port  | URL                                                  | Description                                                  | Technology             |
+| ------------------------------- | ----- | ---------------------------------------------------- | ------------------------------------------------------------ | ---------------------- |
+| **fs-accounts-service**         | 8084  | http://localhost:8084                                | Main REST API service for account and transaction management | Spring Boot, WebSocket |
+| **cs-accounts-events-consumer** | 8082  | http://localhost:8082                                | Event consumer for processing account and transaction events | Spring Boot, MyBatis   |
+| **PostgreSQL Database**         | 5432  | -                                                    | Primary database for accounts, balances, and transactions    | PostgreSQL 15          |
+| **RabbitMQ AMQP**               | 5672  | -                                                    | Message broker for event-driven communication                | RabbitMQ 3.13.7        |
+| **RabbitMQ Management**         | 15672 | http://localhost:15672                               | Web UI for RabbitMQ monitoring and management                | RabbitMQ Management    |
+| **Swagger UI**                  | 8083  | http://localhost:8083/api/v1/swagger-ui/index.html#/ | API documentation and testing interface                      | SpringDoc OpenAPI      |
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - **Java 17** or higher
 - **Docker** and **Docker Compose**
-- **Gradle 8.5** (or use the included wrapper)
-- **Git**
 
 ### Environment Setup
 
-1. **Clone the repository:**
+1. **How To start the project locally**
    ```bash
-   git clone <repository-url>
-   cd tuum-core-banking
+    docker-compose up postgres rabbitmq -d
+    ./gradlew :fs-accounts-service:build
+    ./gradlew :cs-accounts-events-consumer:build
+    ./gradlew :common-lib:build
+    ./gradlew :fs-accounts-service:bootRun
+    ./gradlew :cs-accounts-events-consumer:bootRun
    ```
-
-2. **Verify Java version:**
+1. **How To start the project on docker**
    ```bash
-   java -version
-   # Should show Java 17 or higher
+    docker-compose up -d
+    ./gradlew :fs-accounts-service:build
+    ./gradlew :cs-accounts-events-consumer:build
+    ./gradlew :common-lib:build
+    ./gradlew :fs-accounts-service:bootRun
+    ./gradlew :cs-accounts-events-consumer:bootRun
    ```
-
-3. **Check Docker:**
-   ```bash
-   docker --version
-   docker-compose --version
-   ```
-
-### Option 1: Docker Compose (Recommended)
-
-Start all services with a single command:
-
-```bash
-# Build and start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop all services
-docker-compose down
-```
-
-### Option 2: Local Development
-
-1. **Start infrastructure services:**
-   ```bash
-   docker-compose up -d postgres rabbitmq
-   ```
-
-2. **Build the project:**
-   ```bash
-   ./gradlew clean build
-   ```
-
-3. **Run services in separate terminals:**
-   ```bash
-   # Terminal 1 - Main service
-   ./gradlew :fs-accounts-service:bootRun
-   
-   # Terminal 2 - Event consumer
-   ./gradlew :cs-accounts-events-consumer:bootRun
-   ```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SPRING_PROFILES_ACTIVE` | `default` | Spring profile to use |
-| `DB_HOST` | `localhost` | PostgreSQL host |
-| `DB_PORT` | `5432` | PostgreSQL port |
-| `DB_NAME` | `tuum_banking` | Database name |
-| `DB_USER` | `tuum_user` | Database username |
-| `DB_PASSWORD` | `tuum_password` | Database password |
-| `RABBITMQ_HOST` | `localhost` | RabbitMQ host |
-| `RABBITMQ_PORT` | `5672` | RabbitMQ AMQP port |
-| `RABBITMQ_USER` | `tuum_user` | RabbitMQ username |
-| `RABBITMQ_PASSWORD` | `tuum_password` | RabbitMQ password |
 
 ### Database Configuration
 
 The system uses PostgreSQL with the following default settings:
+
 - **Database**: `tuum_banking`
 - **Username**: `tuum_user`
 - **Password**: `tuum_password`
@@ -146,21 +129,13 @@ The system uses PostgreSQL with the following default settings:
 ### RabbitMQ Configuration
 
 RabbitMQ is configured with:
+
 - **Management UI**: http://localhost:15672
 - **Username**: `tuum_user`
 - **Password**: `tuum_password`
 - **Virtual Host**: `/`
 
-## 📊 Database Schema
-
-### Core Tables
-
-| Table | Description | Key Fields |
-|-------|-------------|------------|
-| `accounts` | Account information | `account_id`, `customer_id`, `country` |
-| `balances` | Account balances by currency | `balance_id`, `account_id`, `currency`, `available_amount` |
-| `transactions` | Transaction records | `transaction_id`, `account_id`, `amount`, `currency`, `direction` |
-| `processed_messages` | Message deduplication | `message_id`, `processed_at` |
+## Database Schema
 
 ### Relationships
 
@@ -168,32 +143,74 @@ RabbitMQ is configured with:
 erDiagram
     ACCOUNTS ||--o{ BALANCES : "has"
     ACCOUNTS ||--o{ TRANSACTIONS : "contains"
-    BALANCES {
-        uuid balance_id PK
-        uuid account_id FK
-        string currency
-        decimal available_amount
-        timestamp created_at
-        timestamp updated_at
-    }
+    BALANCES ||--o{ TRANSACTIONS : "processed_by"
+    PROCESSED_MESSAGES ||--o{ ACCOUNTS : "tracks"
+    PROCESSED_MESSAGES ||--o{ TRANSACTIONS : "tracks"
+
     ACCOUNTS {
-        uuid account_id PK
-        uuid customer_id
-        string country
-        timestamp created_at
+        varchar account_id PK
+        varchar customer_id "NOT NULL"
+        varchar country "NOT NULL"
+        varchar account_name
+        varchar account_type
+        varchar idempotency_key "UNIQUE NOT NULL"
+        timestamp created_at "DEFAULT CURRENT_TIMESTAMP"
+        timestamp updated_at "DEFAULT CURRENT_TIMESTAMP"
     }
+
+    BALANCES {
+        varchar balance_id PK
+        varchar account_id FK "NOT NULL"
+        enum currency "EUR|SEK|GBP|USD NOT NULL"
+        decimal available_amount "15,2 DEFAULT 0.00"
+        integer version_number "DEFAULT 1 NOT NULL"
+        timestamp created_at "DEFAULT CURRENT_TIMESTAMP"
+        timestamp updated_at "DEFAULT CURRENT_TIMESTAMP"
+    }
+
     TRANSACTIONS {
-        uuid transaction_id PK
-        uuid account_id FK
-        decimal amount
-        string currency
-        enum direction
-        string description
-        decimal balance_after_transaction
-        string status
-        timestamp created_at
+        varchar transaction_id PK
+        varchar account_id FK "NOT NULL"
+        varchar balance_id FK "NOT NULL"
+        decimal amount "15,2 NOT NULL"
+        enum currency "EUR|SEK|GBP|USD NOT NULL"
+        enum direction "IN|OUT NOT NULL"
+        text description
+        decimal balance_after_transaction "15,2 NOT NULL"
+        enum status "PENDING|COMPLETED|FAILED DEFAULT COMPLETED"
+        varchar idempotency_key "UNIQUE NOT NULL"
+        timestamp created_at "DEFAULT CURRENT_TIMESTAMP"
+        timestamp updated_at "DEFAULT CURRENT_TIMESTAMP"
+    }
+
+    PROCESSED_MESSAGES {
+        serial id PK
+        varchar message_id "NOT NULL"
+        varchar message_type "NOT NULL"
+        varchar idempotency_key "UNIQUE NOT NULL"
+        timestamp processed_at "DEFAULT CURRENT_TIMESTAMP"
+        text result_data
     }
 ```
+
+### Database Indexes
+
+| Index Name                          | Table                | Columns       | Purpose                             |
+| ----------------------------------- | -------------------- | ------------- | ----------------------------------- |
+| `idx_accounts_customer_id`          | `accounts`           | `customer_id` | Fast customer account lookup        |
+| `idx_balances_account_id`           | `balances`           | `account_id`  | Fast balance lookup by account      |
+| `idx_transactions_account_id`       | `transactions`       | `account_id`  | Fast transaction lookup by account  |
+| `idx_transactions_created_at`       | `transactions`       | `created_at`  | Time-based transaction queries      |
+| `idx_processed_messages_message_id` | `processed_messages` | `message_id`  | Fast message lookup for idempotency |
+
+### Key Features
+
+- **Multi-currency Support**: EUR, SEK, GBP, USD
+- **Optimistic Locking**: Version numbers on balances for concurrency control
+- **Idempotency**: Unique idempotency keys prevent duplicate processing
+- **Audit Trail**: Created/updated timestamps on all tables
+- **Cascade Deletes**: Account deletion cascades to balances and transactions
+- **Message Tracking**: Processed messages table for event sourcing
 
 ## 🔄 Event Flow
 
@@ -244,8 +261,6 @@ sequenceDiagram
     FS->>WS: Send real-time notification
 ```
 
-
-
 ### Building and Testing
 
 ```bash
@@ -263,28 +278,38 @@ sequenceDiagram
 ./gradlew :fs-accounts-service:bootRun --args='--spring.profiles.active=dev'
 ```
 
-## 📡 API Documentation
+```bash
+# View all service logs
+docker-compose logs -f
 
-### Swagger UI
-- **URL**: http://localhost:8084/swagger-ui.html
-- **OpenAPI Spec**: http://localhost:8084/api-docs
+# View specific service logs
+docker-compose logs -f fs-accounts-service
+docker-compose logs -f cs-accounts-events-consumer
+
+# View infrastructure logs
+docker-compose logs -f postgres
+docker-compose logs -f rabbitmq
+```
+
 
 ### Key Endpoints
 
 #### Account Management
+
 - `POST /api/v1/accounts` - Create new account
 - `GET /api/v1/accounts/{id}` - Get account details
 - `GET /api/v1/accounts/{id}/balances` - Get account balances
 
 #### Transaction Management
+
 - `POST /api/v1/transactions` - Create new transaction
 - `GET /api/v1/transactions/{id}` - Get transaction details
 - `GET /api/v1/accounts/{id}/transactions` - Get account transactions
 
 #### Health & Monitoring
+
 - `GET /actuator/health` - Service health check
 - `GET /actuator/info` - Service information
-
 
 ### Database Operations
 
@@ -319,43 +344,7 @@ curl -s -u tuum_user:tuum_password http://localhost:15672/api/queues | jq '.[].n
 curl -s -u tuum_user:tuum_password http://localhost:15672/api/queues/%2F/account-events-queue
 ```
 
-## 🚨 Troubleshooting
 
-### Common Issues
+## System Architecture Overview
 
-1. **Service won't start:**
-   - Check if ports are available
-   - Verify Docker containers are running
-   - Check application logs
-
-2. **Database connection issues:**
-   - Ensure PostgreSQL container is running
-   - Verify database credentials
-   - Check network connectivity
-
-3. **RabbitMQ connection issues:**
-   - Ensure RabbitMQ container is running
-   - Verify queue and exchange configuration
-   - Check message routing
-
-4. **Event processing failures:**
-   - Check consumer logs
-   - Verify message format
-   - Check database constraints
-
-### Logs
-
-```bash
-# View all service logs
-docker-compose logs -f
-
-# View specific service logs
-docker-compose logs -f fs-accounts-service
-docker-compose logs -f cs-accounts-events-consumer
-
-# View infrastructure logs
-docker-compose logs -f postgres
-docker-compose logs -f rabbitmq
-```
-
-
+![Tuum Banking - Scalable Cloud Native](docs/tuum-architecture.png)

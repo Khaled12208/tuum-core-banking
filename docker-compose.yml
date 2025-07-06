@@ -65,11 +65,22 @@ services:
     networks:
       - tuum-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      test:
+        ["CMD", "curl", "-f", "http://localhost:8083/api/v1/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  common-lib:
+    build:
+      context: .
+      dockerfile: common-lib/Dockerfile
+    container_name: tuum-common-lib
+    networks:
+      - tuum-network
+    profiles:
+      - build
 
   cs-accounts-events-consumer:
     build:
@@ -95,7 +106,8 @@ services:
     networks:
       - tuum-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      test:
+        ["CMD", "curl", "-f", "http://localhost:8084/api/v1/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3

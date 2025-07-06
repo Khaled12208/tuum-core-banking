@@ -1,20 +1,21 @@
 package com.tuum.csaccountseventsconsumer.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.tuum.csaccountseventsconsumer.config.RabbitMQConfig;
-import com.tuum.csaccountseventsconsumer.model.Account;
-import com.tuum.csaccountseventsconsumer.model.Balance;
+import com.tuum.common.dto.ErrorResponse;
+import com.tuum.common.dto.mq.ErrorNotification;
+import com.tuum.common.dto.mq.MQMessageData;
+import com.tuum.common.types.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.AmqpTemplate;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.stereotype.Service;
-
-import java.math.BigDecimal;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -24,135 +25,71 @@ public class NotificationService {
     private final AmqpTemplate amqpTemplate;
     private final ObjectMapper objectMapper;
 
-    public void publishAccountSuccess(String accountId, String originalMessage) {
+    public  <T> void publishSuccessNotification(
+            String exchangeName,
+            String routingKey,
+            String type,
+            String status,
+            String requestId,
+            T messageBodyObject,
+            String idempotencyKey,
+            Map<String, Object> extraHeaders
+    ) {
         try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("accountId", accountId);
-            notification.put("status", "SUCCESS");
-            notification.put("message", "Account processed successfully");
-            notification.put("originalMessage", originalMessage);
-            notification.put("processedAt", LocalDateTime.now().toString());
-            notification.put("type", "ACCOUNT_PROCESSED");
 
-            String message = objectMapper.writeValueAsString(notification);
-            amqpTemplate.convertAndSend(RabbitMQConfig.TUUM_BANKING_EXCHANGE, 
-                RabbitMQConfig.ACCOUNTS_SUCCESS_ROUTING_KEY, message);
-            
-            log.info("Published account success notification for account: {}", accountId);
+            MessageProperties messageProperties = new MessageProperties();
+            messageProperties.setHeader("request-id", requestId);
+            messageProperties.setHeader("request-type", type);
+            messageProperties.setHeader("status", status);
+            messageProperties.setHeader("idempotency-key", idempotencyKey);
+            messageProperties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
+            messageProperties.setTimestamp(new Date());
+            String messageBody = objectMapper.writeValueAsString(messageBodyObject);
+            Message message = new Message(messageBody.getBytes(StandardCharsets.UTF_8), messageProperties);
+            log.info("Published success message {}:",message);
+
+            if (extraHeaders != null) {
+                extraHeaders.forEach(messageProperties::setHeader);
+            }
+            amqpTemplate.convertAndSend(exchangeName, routingKey, message);
+
+            log.info("Published message of type {} with requestId: {}, message: {}", status, requestId,message);
         } catch (Exception e) {
-            log.error("Failed to publish account success notification for account: {}", accountId, e);
+            log.error("Failed to publish success notification of type {} with requestId: {}", type, requestId, e);
         }
     }
 
-    public void publishAccountSuccessWithDetails(Account account, List<Balance> balances, String originalMessage, String requestId) {
-        try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("accountId", account.getAccountId());
-            notification.put("customerId", account.getCustomerId());
-            notification.put("country", account.getCountry());
-            notification.put("status", "SUCCESS");
-            notification.put("processedAt", LocalDateTime.now().toString());
-            notification.put("type", "ACCOUNT_PROCESSED");
-            notification.put("requestId", requestId);
-            
-            // Convert balances to the required format
-            List<Map<String, Object>> balanceList = balances.stream()
-                .map(balance -> {
-                    Map<String, Object> balanceMap = new HashMap<>();
-                    balanceMap.put("currency", balance.getCurrency());
-                    balanceMap.put("availableAmount", balance.getAvailableAmount());
-                    return balanceMap;
-                })
-                .collect(Collectors.toList());
-            
-            notification.put("balances", balanceList);
 
-            String message = objectMapper.writeValueAsString(notification);
-            amqpTemplate.convertAndSend(RabbitMQConfig.TUUM_BANKING_EXCHANGE, 
-                RabbitMQConfig.ACCOUNTS_SUCCESS_ROUTING_KEY, message);
-            
-            log.info("Published detailed account success notification for account: {}", account.getAccountId());
+    public void publishErrorResponse(String exchangeName, String routingKey, MQMessageData data, ErrorCode errorCode, String errMsg) {
+
+        ErrorNotification errorNotification = new ErrorNotification(
+                errorCode,
+                errMsg,
+                "Error occurred during processing",
+                LocalDateTime.now(),
+                data.getRequestId()
+        );
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.findAndRegisterModules();
+        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+        try {
+            MessageProperties messageProperties = new MessageProperties();
+            messageProperties.setHeader("request-id", data.getRequestId());
+            messageProperties.setHeader("request-type", data.getRequestType());
+            messageProperties.setHeader("idempotency-key", data.getIdempotencyKey());
+            messageProperties.setHeader("status", "ERROR");
+            messageProperties.setTimestamp(new Date());
+            messageProperties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
+            String jsonString = objectMapper.writeValueAsString(errorNotification);
+            Message message = new Message(jsonString.getBytes(StandardCharsets.UTF_8), messageProperties);
+
+            amqpTemplate.convertAndSend(exchangeName, routingKey, message);
+
+            log.info("Published error message of  {} for with requestId: {}, origin message: {}", jsonString, data.getRequestId() ,message);
         } catch (Exception e) {
-            log.error("Failed to publish detailed account success notification for account: {}", account.getAccountId(), e);
+            log.error("Failed to publish error message for request: {}", data.getRequestId(), e);
         }
     }
-
-    public void publishAccountError(String accountId, String errorMessage, String originalMessage) {
-        try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("accountId", accountId);
-            notification.put("status", "ERROR");
-            notification.put("errorMessage", errorMessage);
-            notification.put("originalMessage", originalMessage);
-            notification.put("processedAt", LocalDateTime.now().toString());
-            notification.put("type", "ACCOUNT_ERROR");
-
-            String message = objectMapper.writeValueAsString(notification);
-            amqpTemplate.convertAndSend(RabbitMQConfig.TUUM_BANKING_EXCHANGE, 
-                RabbitMQConfig.ACCOUNTS_ERROR_ROUTING_KEY, message);
-            
-            log.info("Published account error notification for account: {}", accountId);
-        } catch (Exception e) {
-            log.error("Failed to publish account error notification for account: {}", accountId, e);
-        }
-    }
-
-    public void publishAccountError(String accountId, String errorMessage, String originalMessage, String requestId) {
-        try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("accountId", accountId);
-            notification.put("status", "ERROR");
-            notification.put("errorMessage", errorMessage);
-            notification.put("originalMessage", originalMessage);
-            notification.put("processedAt", LocalDateTime.now().toString());
-            notification.put("type", "ACCOUNT_ERROR");
-            notification.put("requestId", requestId);
-
-            String message = objectMapper.writeValueAsString(notification);
-            amqpTemplate.convertAndSend(RabbitMQConfig.TUUM_BANKING_EXCHANGE, 
-                RabbitMQConfig.ACCOUNTS_ERROR_ROUTING_KEY, message);
-            
-            log.info("Published account error notification for account: {} with requestId: {}", accountId, requestId);
-        } catch (Exception e) {
-            log.error("Failed to publish account error notification for account: {}", accountId, e);
-        }
-    }
-
-    public void publishTransactionSuccess(String transactionId, String originalMessage) {
-        try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("transactionId", transactionId);
-            notification.put("status", "SUCCESS");
-            notification.put("message", "Transaction processed successfully");
-            notification.put("originalMessage", originalMessage);
-            notification.put("processedAt", LocalDateTime.now().toString());
-            notification.put("type", "TRANSACTION_PROCESSED");
-
-            String message = objectMapper.writeValueAsString(notification);
-            amqpTemplate.convertAndSend(RabbitMQConfig.TUUM_BANKING_EXCHANGE, 
-                RabbitMQConfig.TRANSACTIONS_SUCCESS_ROUTING_KEY, message);
-            
-            log.info("Published transaction success notification for transaction: {}", transactionId);
-        } catch (Exception e) {
-            log.error("Failed to publish transaction success notification for transaction: {}", transactionId, e);
-        }
-    }
-
-    public void publishTransactionError(String transactionId, String errorMessage, String originalMessage) {
-        try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("transactionId", transactionId);
-            notification.put("status", "ERROR");
-            notification.put("errorMessage", errorMessage);
-            notification.put("processedAt", LocalDateTime.now().toString());
-
-            String message = objectMapper.writeValueAsString(notification);
-            amqpTemplate.convertAndSend(RabbitMQConfig.TUUM_BANKING_EXCHANGE, 
-                RabbitMQConfig.TRANSACTIONS_ERROR_ROUTING_KEY, message);
-            
-            log.info("Published transaction error notification for transaction: {}", transactionId);
-        } catch (Exception e) {
-            log.error("Failed to publish transaction error notification for transaction: {}", transactionId, e);
-        }
-    }
-} 
+}

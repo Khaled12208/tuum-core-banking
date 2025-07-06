@@ -1,8 +1,11 @@
 package com.tuum.csaccountseventsconsumer.consumer;
 
+import com.tuum.common.adapter.AmqpMessageAdapter;
+import com.tuum.common.dto.mq.MQMessageData;
 import com.tuum.csaccountseventsconsumer.service.TransactionEventService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
@@ -12,15 +15,18 @@ import org.springframework.stereotype.Component;
 public class TransactionEventConsumer {
 
     private final TransactionEventService transactionEventService;
+    private final AmqpMessageAdapter amqpMessageAdapter;
 
-    @RabbitListener(queues = "transactions-events-queue")
-    public void handleTransactionCreatedEvent(String message) {
-        log.info("Received transaction creation request: {}", message);
+    @RabbitListener(queues = "#{T(com.tuum.common.types.RabbitMQConfig).TRANSACTIONS_EVENTS_QUEUE.getValue()}")
+    public void handleTransactionEvent(Message message) {
+        log.info("Consumer received message: {}", message);
+        log.info("Message length: {}", message.getBody().length);
         
         try {
-            transactionEventService.processTransactionCreatedEvent(message);
+            MQMessageData messageData = amqpMessageAdapter.adapt(message);
+            transactionEventService.processTransactionCreatedEvent(messageData);
         } catch (Exception e) {
-            log.error("Error processing transaction creation request", e);
+            log.error("Error processing transaction event", e);
         }
     }
 } 

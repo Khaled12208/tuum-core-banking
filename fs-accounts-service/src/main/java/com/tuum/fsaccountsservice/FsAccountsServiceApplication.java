@@ -4,7 +4,7 @@ import org.springframework.amqp.rabbit.annotation.EnableRabbit;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.tuum.fsaccountsservice", "com.tuum.common"})
 @EnableRabbit
 public class FsAccountsServiceApplication {
 

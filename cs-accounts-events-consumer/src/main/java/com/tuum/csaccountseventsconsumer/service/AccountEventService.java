@@ -1,25 +1,26 @@
 package com.tuum.csaccountseventsconsumer.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.tuum.csaccountseventsconsumer.dto.AccountCreatedEvent;
+import com.tuum.common.domain.entities.Account;
+import com.tuum.common.domain.entities.Balance;
+import com.tuum.common.domain.entities.ProcessedMessage;
+import com.tuum.common.dto.mq.CreateAccountEvent;
+import com.tuum.common.dto.mq.MQMessageData;
+import com.tuum.common.exception.ProcessingException;
+import com.tuum.common.types.ErrorCode;
+import com.tuum.common.types.RabbitMQConfig;
+import com.tuum.common.types.RequestType;
 import com.tuum.csaccountseventsconsumer.mapper.AccountMapper;
 import com.tuum.csaccountseventsconsumer.mapper.BalanceMapper;
 import com.tuum.csaccountseventsconsumer.mapper.ProcessedMessageMapper;
-import com.tuum.csaccountseventsconsumer.model.Account;
-import com.tuum.csaccountseventsconsumer.model.Balance;
-import com.tuum.csaccountseventsconsumer.model.ProcessedMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -32,112 +33,132 @@ public class AccountEventService {
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
 
-    public void processAccountCreatedEvent(String message) {
+    public void processAccountEvent(MQMessageData message) {
         try {
-            log.info("Processing account created event: {}", message);
-            
-            // Parse the event - the message might contain a type field, so we need to handle it properly
-            com.fasterxml.jackson.databind.JsonNode jsonNode = objectMapper.readTree(message);
-            
-            AccountCreatedEvent event;
-            // If the message has a type field, extract the data part
-            if (jsonNode.has("type")) {
-                // The event data is the entire message, but we need to ignore the type field
-                event = new AccountCreatedEvent();
-                event.setAccountId(jsonNode.has("accountId") ? jsonNode.get("accountId").asText() : null);
-                event.setRequestId(jsonNode.has("requestId") ? jsonNode.get("requestId").asText() : null);
-                event.setCustomerId(jsonNode.get("customerId").asText());
-                event.setCountry(jsonNode.get("country").asText());
-                event.setCurrencies(objectMapper.convertValue(jsonNode.get("currencies"), 
-                    objectMapper.getTypeFactory().constructCollectionType(java.util.List.class, String.class)));
-                event.setCreatedAt(jsonNode.get("createdAt").asText());
-            } else {
-                // Direct deserialization if no type field
-                event = objectMapper.treeToValue(jsonNode, AccountCreatedEvent.class);
+            CreateAccountEvent event = objectMapper.readValue(message.getMessageBody(), CreateAccountEvent.class);
+            ensureAccountId(event);
+
+            switch (message.getRequestType()) {
+                case CREATE:
+                    handleCreate(event, message);
+                    break;
+                default:
+                    log.warn("Unsupported request type: {}", message.getRequestType());
+                    throw new ProcessingException(
+                            "Account creation failed due to unsupported request type",
+                            RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
+                            RabbitMQConfig.ACCOUNTS_ERROR_ROUTING_KEY.getValue(),
+                            "ACCOUNT_CREATION_ERROR",
+                            event.getRequestId(),
+                            null
+                    );
             }
-            
-            // Generate account ID if not provided
-            String accountId = event.getAccountId();
-            if (accountId == null || accountId.isEmpty()) {
-                accountId = "ACC" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-                event.setAccountId(accountId);
-                log.info("Generated account ID: {} for request: {}", accountId, event.getRequestId());
-            }
-            
-            // Check if already processed using requestId if available, otherwise use accountId
-            String messageId = event.getRequestId() != null ? event.getRequestId() : accountId;
-            if (processedMessageMapper.existsProcessedMessage(messageId)) {
-                log.info("Account event already processed: {}", messageId);
-                // Fetch existing account and balances for notification
-                Account existingAccount = accountMapper.findAccountById(accountId);
-                List<Balance> existingBalances = balanceMapper.findBalancesByAccountId(accountId);
-                notificationService.publishAccountSuccessWithDetails(existingAccount, existingBalances, message, event.getRequestId());
-                return;
-            }
-            
-            // Check if account already exists
-            if (accountMapper.existsAccountById(accountId)) {
-                log.info("Account already exists: {}", accountId);
-                // Publish error notification instead of success
-                notificationService.publishAccountError(
-                    accountId,
-                    "Account already exists with id: " + accountId,
-                    message,
-                    event.getRequestId()
-                );
-                return;
-            }
-            
-            // Create account
-            Account account = new Account();
-            account.setAccountId(accountId);
-            account.setCustomerId(event.getCustomerId());
-            account.setCountry(event.getCountry());
-            account.setCreatedAt(LocalDateTime.now());
-            account.setUpdatedAt(LocalDateTime.now());
-            
-            accountMapper.insertAccount(account);
-            log.info("Successfully created account: {}", accountId);
-            
-            // Create balances for each currency
-            List<Balance> balances = new java.util.ArrayList<>();
-            for (String currency : event.getCurrencies()) {
-                Balance balance = new Balance();
-                balance.setBalanceId(UUID.randomUUID().toString());
-                balance.setAccountId(accountId);
-                balance.setCurrency(currency);
-                balance.setAvailableAmount(BigDecimal.ZERO);
-                balance.setVersionNumber(1);
-                balance.setCreatedAt(LocalDateTime.now());
-                balance.setUpdatedAt(LocalDateTime.now());
-                
-                balanceMapper.insertBalance(balance);
-                balances.add(balance);
-                log.info("Created balance for account {} with currency {}", accountId, currency);
-            }
-            
-            // Record processed message
-            ProcessedMessage processedMessage = new ProcessedMessage();
-            processedMessage.setMessageId(messageId);
-            processedMessage.setMessageType("CREATE_ACCOUNT");
-            processedMessage.setProcessedAt(LocalDateTime.now());
-            processedMessage.setResultData("{\"status\":\"SUCCESS\",\"accountId\":\"" + accountId + "\"}");
-            
-            processedMessageMapper.insertProcessedMessage(processedMessage);
-            
-            // Publish success notification with detailed account information
-            notificationService.publishAccountSuccessWithDetails(account, balances, message, event.getRequestId());
-            
         } catch (Exception e) {
-            log.error("Error processing account created event: {}", message, e);
-            try {
-                com.fasterxml.jackson.databind.JsonNode jsonNode = objectMapper.readTree(message);
-                String accountId = jsonNode.has("accountId") ? jsonNode.get("accountId").asText() : "UNKNOWN";
-                String requestId = jsonNode.has("requestId") ? jsonNode.get("requestId").asText() : null;
-                notificationService.publishAccountError(accountId, message, e.getMessage(), requestId);
-            } catch (Exception ex) {
-                log.error("Failed to publish account error notification", ex);
-            }
+            log.error("Error processing account event: {}, request-id: {} ", e.getMessage(), message.getRequestId(), e);
+            notificationService.publishErrorResponse(RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(), RabbitMQConfig.ACCOUNTS_ERROR_ROUTING_KEY.getValue(), message, ErrorCode.ACCOUNT_CREATION_FAILED, e.getMessage());
         }
     }
-} 
+
+    private void handleCreate(CreateAccountEvent event, MQMessageData message) {
+        String messageId = Optional.ofNullable(event.getRequestId()).orElse(event.getAccountId());
+        
+        if (processedMessageMapper.existsProcessedMessage(messageId)) {
+            log.info("Event already processed in database: {}", messageId);
+            publishSuccessNotificationForExistingAccount(event.getAccountId(), message.getMessageBody(), event, message.getRequestType());
+            return;
+        }
+
+        if (accountMapper.existsAccountById(event.getAccountId())) {
+            log.warn("Account already exists: {}", event.getAccountId());
+            throw new ProcessingException(
+                    "Account creation failed due to Account already exists",
+                    RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
+                    RabbitMQConfig.ACCOUNTS_ERROR_ROUTING_KEY.getValue(),
+                    "ACCOUNT_CREATION_ERROR",
+                    event.getRequestId(),
+                    null
+            );
+        }
+
+        Account account = createAndSaveAccount(event);
+        List<Balance> balances = createAndSaveBalances(account.getAccountId(), event.getBalances());
+        account.setBalances(balances);
+        
+        recordProcessedMessage(messageId, account.getAccountId(), event.getIdempotencyKey());
+        
+        notificationService.publishSuccessNotification(
+                RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
+                RabbitMQConfig.ACCOUNTS_PROCESSED_ROUTING_KEY.getValue(),
+                message.getRequestType().getCode(),
+                "SUCCESS",
+                event.getRequestId(),
+                account,
+                event.getIdempotencyKey(),
+                null
+        );
+        log.info("Account creation processed successfully for {}", account.getAccountId());
+    }
+
+    private void ensureAccountId(CreateAccountEvent event) {
+        if (event.getAccountId() == null || event.getAccountId().isEmpty()) {
+            String generatedId = "ACC" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+            event.setAccountId(generatedId);
+            log.info("Generated account ID: {} for event", generatedId);
+        }
+    }
+
+    private void publishSuccessNotificationForExistingAccount(String accountId, String rawMessage, CreateAccountEvent event, RequestType requestType) {
+        Account existingAccount = accountMapper.findAccountById(accountId);
+        List<Balance> existingBalances = balanceMapper.findBalancesByAccountId(accountId);
+        existingAccount.setBalances(existingBalances);
+        notificationService.publishSuccessNotification(
+                RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
+                RabbitMQConfig.ACCOUNTS_PROCESSED_ROUTING_KEY.getValue(),
+                requestType.getCode(),
+                "SUCCESS",
+                event.getRequestId(),
+                existingAccount,
+                event.getIdempotencyKey(),
+                null
+        );
+    }
+
+    private Account createAndSaveAccount(CreateAccountEvent event) {
+        Account account = new Account();
+        account.setAccountId(event.getAccountId());
+        account.setCustomerId(event.getCustomerId());
+        account.setCountry(event.getCountry());
+        account.setIdempotencyKey(event.getIdempotencyKey());
+        account.setCreatedAt(LocalDateTime.now());
+        account.setUpdatedAt(LocalDateTime.now());
+
+        accountMapper.insertAccount(account);
+        log.info("Created new account with ID: {}", account.getAccountId());
+        return account;
+    }
+
+    private List<Balance> createAndSaveBalances(String accountId, List<Balance> balances) {
+        for (Balance balance : balances) {
+            balance.setAccountId(accountId);
+            balance.setBalanceId(UUID.randomUUID().toString());
+            balance.setVersionNumber(1);
+            balance.setCreatedAt(LocalDateTime.now());
+            balance.setUpdatedAt(LocalDateTime.now());
+            balanceMapper.insertBalance(balance);
+            log.info("Created balance for account {} with currency {}", accountId, balance.getCurrency().toString());
+        }
+        return balances;
+    }
+
+    private void recordProcessedMessage(String messageId, String accountId, String idempotencyKey) {
+        ProcessedMessage processedMessage = new ProcessedMessage();
+        processedMessage.setMessageId(messageId);
+        processedMessage.setMessageType("CREATE_ACCOUNT");
+        processedMessage.setIdempotencyKey(idempotencyKey);
+        processedMessage.setProcessedAt(LocalDateTime.now());
+        processedMessage.setResultData("{\"status\":\"SUCCESS\",\"accountId\":\"" + accountId + "\"}");
+        
+        processedMessageMapper.insertProcessedMessage(processedMessage);
+        log.info("Recorded processed message for account {} with idempotency key {}", accountId, idempotencyKey);
+    }
+}
