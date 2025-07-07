@@ -23,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import com.tuum.common.exception.InsufficientFundsException;
 
 @Service
 @RequiredArgsConstructor
@@ -36,7 +37,7 @@ public class EventPublisherService {
 
     private final ConcurrentHashMap<String, CompletableFuture<?>> pendingRequests = new ConcurrentHashMap<>();
 
-    public <T> T publishEventAndWaitForResponse(Object event, String routingKey, String idempotencyKey, String requestId, int timeoutSeconds, RequestType requestType) throws Exception {
+    public <T> T publishEventAndWaitForResponse(Object event, String routingKey, String idempotencyKey, String requestId, int timeoutSeconds, RequestType requestType) throws InsufficientFundsException, BusinessException {
         log.info("Publishing event to routing key: {} with idempotency key: {} and request type: {} , request-id {}", routingKey, idempotencyKey, requestType,requestId);
 
         @SuppressWarnings("unchecked")
@@ -45,9 +46,15 @@ public class EventPublisherService {
             log.info("Request with idempotency key {} is already being processed, waiting for completion", idempotencyKey);
             try {
                 return waitForResponseWithErrorChecking(existingFuture, idempotencyKey, timeoutSeconds, requestType);
+            } catch (InsufficientFundsException e) {
+                log.error("InsufficientFundsException waiting for existing request: {}", idempotencyKey, e);
+                throw e;
+            } catch (BusinessException e) {
+                log.error("BusinessException waiting for existing request: {}", idempotencyKey, e);
+                throw e;
             } catch (Exception e) {
                 log.error("Error waiting for existing request: {}", idempotencyKey, e);
-                throw e;
+                throw new BusinessException("Request failed: " + e.getMessage());
             }
         }
 
@@ -72,20 +79,22 @@ public class EventPublisherService {
             log.info("Successfully published event for processing: {}", idempotencyKey);
             log.info("Waiting for consumer to process request: {}", idempotencyKey);
 
-            // Wait for response with periodic error checking
             T result = waitForResponseWithErrorChecking(future, idempotencyKey, timeoutSeconds, requestType);
             log.info("Received result from consumer for request: {}", idempotencyKey);
             return result;
 
         } catch (JsonProcessingException e) {
             log.error("Error serializing event: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to publish event: JSON serialization error");
-        } catch (TimeoutException e) {
-            log.error("Timeout waiting for consumer to process request: {}", idempotencyKey, e);
-            throw new RuntimeException("Request timed out - consumer may not be running");
-        } catch (Exception e) {
-            log.error("Error publishing event: {}", idempotencyKey, e);
-            throw new RuntimeException("Request failed: " + e.getMessage());
+            throw new BusinessException("Failed to publish event: JSON serialization error");
+        } catch (InsufficientFundsException e) {
+            log.error("InsufficientFundsException caught in EventPublisherService: {}", idempotencyKey, e);
+            throw e;
+        } catch (BusinessException e) {
+            log.error("BusinessException caught in EventPublisherService: {}", idempotencyKey, e);
+            throw e;
+        } catch (RuntimeException e) {
+            log.error("RuntimeException caught in EventPublisherService: {} - Exception type: {}", idempotencyKey, e.getClass().getName(), e);
+            throw new BusinessException("Request failed: " + e.getMessage());
         } finally {
             pendingRequests.remove(idempotencyKey);
         }
@@ -117,68 +126,60 @@ public class EventPublisherService {
         pendingRequests.remove(idempotencyKey);
     }
 
-    /**
-     * Wait for response while periodically checking for errors from the error topic
-     */
     @SuppressWarnings("unchecked")
-    private <T> T waitForResponseWithErrorChecking(CompletableFuture<T> future, String idempotencyKey, int timeoutSeconds, RequestType requestType) throws Exception {
+    private <T> T waitForResponseWithErrorChecking(CompletableFuture<T> future, String idempotencyKey, int timeoutSeconds, RequestType requestType) throws InsufficientFundsException, BusinessException {
         long startTime = System.currentTimeMillis();
         long timeoutMillis = timeoutSeconds * 1000L;
-        long checkInterval = 50; // Check for errors more frequently (every 50ms)
-
+        long checkInterval = 50;
         while (System.currentTimeMillis() - startTime < timeoutMillis) {
-            // Check if the future is already completed
             if (future.isDone()) {
-                return future.get();
+                try {
+                    return future.get();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new BusinessException("Request was interrupted");
+                } catch (Exception e) {
+                    throw new BusinessException("Request failed: " + e.getMessage());
+                }
             }
-
-            // Check for errors from both error topics since we can't determine from RequestType
             ErrorNotification error = null;
-            
-            // Check account errors first
             error = accountNotificationConsumer.getErrorForIdempotencyKey(idempotencyKey);
             if (error != null) {
                 accountNotificationConsumer.removeErrorFromCache(idempotencyKey);
             } else {
-                // Check transaction errors if no account error found
                 error = transactionNotificationConsumer.getErrorForIdempotencyKey(idempotencyKey);
                 if (error != null) {
                     transactionNotificationConsumer.removeErrorFromCache(idempotencyKey);
                 }
             }
-
             if (error != null) {
                 log.error("Error detected for idempotency key {}: {} - {}", idempotencyKey, error.getErrorCode(), error.getErrorMessage());
-                
-                // Complete the future with an exception
-                BusinessException businessException = new BusinessException(
-                    error.getErrorMessage(), 
-                    error.getErrorCode().getCode(), 
-                    error.getErrorCode().getHttpStatus()
-                );
-                future.completeExceptionally(businessException);
-                
-                // Return the exception immediately
-                throw businessException;
+                if (error.getErrorCode() == ErrorCode.INSUFFICIENT_FUNDS) {
+                    InsufficientFundsException insufficientFundsException = new InsufficientFundsException(error.getErrorMessage());
+                    future.completeExceptionally(insufficientFundsException);
+                    throw insufficientFundsException;
+                } else {
+                    BusinessException businessException = new BusinessException(
+                        error.getErrorMessage(), 
+                        error.getErrorCode().getCode(), 
+                        error.getErrorCode().getHttpStatus()
+                    );
+                    future.completeExceptionally(businessException);
+                    throw businessException;
+                }
             } else {
-                // Debug logging to see if we're checking but not finding errors
-                if (System.currentTimeMillis() % 1000 < 50) { // Log every ~1 second
+                if (System.currentTimeMillis() % 1000 < 50) { 
                     log.debug("No error found for idempotency key: {} (checking...)", idempotencyKey);
                 }
             }
-
-            // Wait a short interval before checking again
             try {
                 Thread.sleep(checkInterval);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new RuntimeException("Request was interrupted", e);
+                throw new BusinessException("Request was interrupted");
             }
         }
-
-        // Only timeout if no error was detected and no response received
-        // This means the consumer is truly down or not processing
         log.error("Timeout waiting for response or error for idempotency key: {} - consumer may be down", idempotencyKey);
-        throw new RuntimeException("Request timed out - consumer may not be running");
+        throw new BusinessException("Request timed out - consumer may not be running");
     }
 } 

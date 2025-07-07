@@ -78,7 +78,7 @@ run_1000_transaction_test() {
         time=$(echo $result | cut -d',' -f1)
         http_code=$(echo $result | cut -d',' -f2)
         
-        if [ "$http_code" = "200" ]; then
+        if [ "$http_code" = "201" ]; then
             success_count=$((success_count + 1))
             total_time=$(echo "$total_time + $time" | bc -l)
         else
@@ -133,11 +133,10 @@ run_concurrent_test() {
         time=$(echo $result | cut -d',' -f1)
         http_code=$(echo $result | cut -d',' -f2)
         
-        # Account creation returns 201, transactions return 200
         if [ "$test_type" = "account" ] && [ "$http_code" = "201" ]; then
             success_count=$((success_count + 1))
             total_time=$(echo "$total_time + $time" | bc -l)
-        elif [ "$test_type" = "transaction" ] && [ "$http_code" = "200" ]; then
+        elif [ "$test_type" = "transaction" ] && [ "$http_code" = "201" ]; then
             success_count=$((success_count + 1))
             total_time=$(echo "$total_time + $time" | bc -l)
         fi
@@ -187,11 +186,11 @@ run_sustained_test() {
         time=$(echo $result | cut -d',' -f1)
         http_code=$(echo $result | cut -d',' -f2)
         
-        # Account creation returns 201, transactions return 200
+        # Account creation returns 201, transactions return 201
         if [ "$test_type" = "account" ] && [ "$http_code" = "201" ]; then
             success_count=$((success_count + 1))
             total_time=$(echo "$total_time + $time" | bc -l)
-        elif [ "$test_type" = "transaction" ] && [ "$http_code" = "200" ]; then
+        elif [ "$test_type" = "transaction" ] && [ "$http_code" = "201" ]; then
             success_count=$((success_count + 1))
             total_time=$(echo "$total_time + $time" | bc -l)
         fi

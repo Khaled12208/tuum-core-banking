@@ -35,16 +35,25 @@ This project is a **microservices-based core banking platform** designed to hand
 
 - ** Development Machine Performance for transcription endpoint **
 
-* using a sample of 1000 request
-* Concurrent TPS 83.3 Peak performance with parallel requests
-* Bandwidth 8.86 KB/s,
-* Response Time 66 ms
+Performance Metrics: 1000 request / 5 Concurrency / 30sec :: using Bash script
+
+| Metric                    | Account Creation | Transaction Processing |
+| ------------------------- | ---------------- | ---------------------- |
+| **Peak TPS**              | 5.00             | 11.62                  |
+| **Sustained TPS**         | 4.90             | 4.93                   |
+| **Average Response Time** | 57–60 ms         | 59–63 ms               |
+| **Success Rate**          | 100%             | 100%                   |
+| **Concurrency Support**   | 5 requests       | 5 requests             |
 
 - ** for functional testing and demo:**
 
-* i provided a postman collection you can import it in your client and enjoy testing manually
+* I provided a postman collection you can import it in your client and enjoy testing manually
 * there is also unit test coverage for client service
 * E2E test coverage
+
+- ** exception handling:**
+
+* there is an error in proper exception handling for insufficient fund it should be wraped in diffrnet error rather than the genral but its working fine
 
 ## System Architecture
 
@@ -88,14 +97,14 @@ graph TB
 ## System Components
 
 | Component                       | Port  | URL                                                  |
-|---------------------------------|-------|------------------------------------------------------|
+| ------------------------------- | ----- | ---------------------------------------------------- |
 | **fs-accounts-service**         | 8084  | http://localhost:8084                                |
 | **cs-accounts-events-consumer** | 8082  | http://localhost:8082                                |
 | **PostgreSQL Database**         | 5432  | -                                                    |
 | **RabbitMQ AMQP**               | 5672  | -                                                    |
 | **RabbitMQ Management**         | 15672 | http://localhost:15672                               |
 | **Swagger UI**                  | 8083  | http://localhost:8083/api/v1/swagger-ui/index.html#/ |
-| **Allure-report**               | 8085  | http://localhost:8085/                               |     
+| **Allure-report**               | 8085  | http://localhost:8085/                               |
 
 ## Quick Start
 
@@ -120,20 +129,19 @@ graph TB
    ```bash
     docker-compose up -d
    OR
-    docker-compose up --build
+    docker-compose build --no-cache
    ```
 
 3. **How To start the project on docker**
 
    ```bash
-    ./gradlew :acceptance-test:allureReport
+      ./gradlew :acceptance-test:allureReport
      ./gradlew :acceptance-test:allureServe
-   
-   or 
-   docker-compose build acceptance-test && docker-compose --profile test up -d acceptance-test
-   
+
+   or
+     docker-compose build acceptance-test && docker-compose --profile test up -d acceptance-test
+
    ```
-   
 
 ### Database Configuration
 

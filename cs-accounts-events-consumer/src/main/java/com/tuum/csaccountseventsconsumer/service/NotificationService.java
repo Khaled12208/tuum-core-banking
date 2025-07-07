@@ -1,7 +1,6 @@
 package com.tuum.csaccountseventsconsumer.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.tuum.common.dto.ErrorResponse;
 import com.tuum.common.dto.mq.ErrorNotification;
 import com.tuum.common.dto.mq.MQMessageData;
 import com.tuum.common.types.ErrorCode;
@@ -11,7 +10,6 @@ import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.stereotype.Service;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;

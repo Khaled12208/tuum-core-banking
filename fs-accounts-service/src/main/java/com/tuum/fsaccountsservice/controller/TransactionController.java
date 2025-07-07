@@ -8,6 +8,7 @@ import com.tuum.common.exception.ResourceNotFoundException;
 import com.tuum.fsaccountsservice.service.TransactionService;
 import com.tuum.fsaccountsservice.dto.resonse.TransactionResponse;
 import com.tuum.common.dto.ErrorResponse;
+import com.tuum.common.validation.ValidIdempotencyKey;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -17,6 +18,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -111,21 +113,14 @@ public class TransactionController {
     @SecurityRequirement(name = "IdempotencyKey")
     public ResponseEntity<TransactionResponse> createTransaction(
             @Parameter(description = "Transaction creation request", required = true)
-            @RequestBody CreateTransactionRequest request,
+            @Valid @RequestBody CreateTransactionRequest request,
             @Parameter(description = "Unique key to prevent duplicate processing", required = true, example = "req-123456")
-            @RequestHeader(value = "Idempotency-Key") String idempotencyKey) {
+            @ValidIdempotencyKey @RequestHeader(value = "Idempotency-Key") String idempotencyKey) {
         
         log.info("Creating transaction for account: {}", request.getAccountId());
 
-        if (idempotencyKey == null || idempotencyKey.trim().isEmpty()) {
-            log.error("Idempotency-Key is missing");
-            throw new BusinessException("Idempotency-Key is missing");
-        }
-
         try {
-
             TransactionResponse result = transactionService.createTransaction(request, idempotencyKey);
-//            return ResponseEntity.ok(result);
             return ResponseEntity.status(HttpStatus.CREATED).body(result);
         } catch (InsufficientFundsException e) {
             log.warn("Insufficient funds for transaction: {}", e.getMessage());

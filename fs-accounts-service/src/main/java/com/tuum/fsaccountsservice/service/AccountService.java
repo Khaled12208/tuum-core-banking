@@ -15,6 +15,7 @@ import com.tuum.fsaccountsservice.mapper.AccountMapper;
 import com.tuum.fsaccountsservice.mapper.BalanceMapper;
 
 import com.tuum.common.util.TraceIdGenerator;
+import com.tuum.common.util.IdGenerator;
 import com.tuum.fsaccountsservice.util.DtoMapper;
 import com.tuum.common.dto.mq.ErrorNotification;
 import com.tuum.common.types.ErrorCode;
@@ -26,7 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-
+import com.tuum.common.exception.InsufficientFundsException;
 
 @Service
 @RequiredArgsConstructor
@@ -40,7 +41,7 @@ public class AccountService {
     private final IdempotencyService idempotencyService;
 
     @Transactional
-    public AccountResponse createAccount(CreateAccountRequest request, String idempotencyKey) {
+    public AccountResponse createAccount(CreateAccountRequest request, String idempotencyKey) throws BusinessException {
         String requestId = traceIdGenerator.generateTraceId();
         log.info("Creating account with requestId: {} and idempotency key: {}", requestId, idempotencyKey);
         
@@ -62,12 +63,12 @@ public class AccountService {
 
             CreateAccountEvent event = new CreateAccountEvent();
             event.setRequestId(requestId);
+            event.setAccountId(IdGenerator.generateAccountId());
             event.setCustomerId(request.getCustomerId());
             event.setCountry(request.getCountry());
             event.setIdempotencyKey(idempotencyKey);
             event.setCreatedAt(LocalDateTime.now());
             
-            // Convert currencies to balances
             List<Balance> balances = request.getCurrencies().stream()
                 .map(currency -> {
                     Balance balance = new Balance();
@@ -95,6 +96,9 @@ public class AccountService {
             );
             
 
+        } catch (BusinessException e) {
+            log.error("Business error creating account: {}", idempotencyKey, e);
+            throw e;
         } catch (Exception e) {
             log.error("Error creating account: {}", idempotencyKey, e);
             throw new BusinessException("Failed to create account: " + e.getMessage());
@@ -103,10 +107,27 @@ public class AccountService {
         }
     }
 
-
     public void completeAccount(Object event, MQMessageData messageData) {
         String idempotencyKey = messageData.getIdempotencyKey();
         String status = messageData.getStatus();
+
+        if (event instanceof ErrorNotification errorNotification) {
+            log.error("Account processing failed for idempotency key {}: {} - {}", 
+                idempotencyKey, errorNotification.getErrorCode(), errorNotification.getErrorMessage());
+            
+            if (errorNotification.getErrorCode() == ErrorCode.INSUFFICIENT_FUNDS) {
+                InsufficientFundsException insufficientFundsException = new InsufficientFundsException(errorNotification.getErrorMessage());
+                eventPublisherService.completeRequestWithError(idempotencyKey, insufficientFundsException);
+            } else {
+                BusinessException businessException = new BusinessException(
+                    errorNotification.getErrorMessage(),
+                    errorNotification.getErrorCode().getCode(),
+                    errorNotification.getErrorCode().getHttpStatus()
+                );
+                eventPublisherService.completeRequestWithError(idempotencyKey, businessException);
+            }
+            return;
+        }
 
         if ("SUCCESS".equalsIgnoreCase(status) && event instanceof CreateAccountEvent accountEvent) {
             AccountResponse response = new AccountResponse();
@@ -115,10 +136,12 @@ public class AccountService {
             response.setCountry(accountEvent.getCountry());
             response.setBalances(DtoMapper.toBalanceResponses(accountEvent.getBalances()));
             eventPublisherService.completeRequest(idempotencyKey, response);
-        } else
+        } else {
+            log.warn("Unexpected event type or status for idempotency key {}: event={}, status={}", 
+                idempotencyKey, event.getClass().getSimpleName(), status);
             eventPublisherService.completeRequest(idempotencyKey, event);
+        }
     }
-
 
     @Transactional(readOnly = true)
     public Account getAccount(String accountId) {
@@ -141,6 +164,12 @@ public class AccountService {
 
     @Transactional(readOnly = true)
     public List<Account> getAccountsByCustomerId(String customerId) {
-        return accountMapper.findAccountsByCustomerId(customerId); // Uses JOIN
+        // First check if any accounts exist for this customer
+        List<Account> accounts = accountMapper.findAccountsByCustomerId(customerId);
+        if (accounts.isEmpty()) {
+
+            throw new ResourceNotFoundException("Customer not found with id: " + customerId);
+        }
+        return accounts;
     }
 } 

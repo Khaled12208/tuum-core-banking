@@ -200,7 +200,7 @@ public class AccountManagementSteps extends BaseSteps {
         String accountId = response.jsonPath().getString("accountId");
         TestContext.setValue("accountId", accountId);
 
-        Allure.addDescription("✅ Multi-currency account created: " + accountId);
+        Allure.addDescription(" Multi-currency account created: " + accountId);
         logger.info("Created multi-currency account: {}", accountId);
     }
 

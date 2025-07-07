@@ -28,20 +28,14 @@ public class MyBatisConfig {
         SqlSessionFactoryBean sessionFactory = new SqlSessionFactoryBean();
         sessionFactory.setDataSource(dataSource);
         
-        // Set mapper locations
         sessionFactory.setMapperLocations(
             new PathMatchingResourcePatternResolver().getResources("classpath:mapper/*.xml")
         );
         
-        // Set type aliases package
         sessionFactory.setTypeAliasesPackage("com.tuum.common.domain.entities");
-        
-        // MyBatis configuration
         org.apache.ibatis.session.Configuration configuration = new org.apache.ibatis.session.Configuration();
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.setLogImpl(org.apache.ibatis.logging.stdout.StdOutImpl.class);
-        
-        // Register type handlers
         TypeHandlerRegistry typeHandlerRegistry = configuration.getTypeHandlerRegistry();
         typeHandlerRegistry.register(Currency.class, CurrencyTypeHandler.class);
         typeHandlerRegistry.register(com.tuum.common.types.TransactionDirection.class, com.tuum.common.util.DirectionTypeHandler.class);

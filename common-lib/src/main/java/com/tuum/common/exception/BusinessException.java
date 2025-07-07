@@ -26,9 +26,15 @@ public class BusinessException extends RuntimeException {
         this.httpStatus = httpStatus;
     }
     
-    public BusinessException(String message, String errorCode, int httpStatus, Throwable cause) {
+    public BusinessException(String message, Throwable cause) {
+        super(message, cause);
+        this.errorCode = "BUSINESS_ERROR";
+        this.httpStatus = 400;
+    }
+    
+    public BusinessException(String message, String errorCode, Throwable cause) {
         super(message, cause);
         this.errorCode = errorCode;
-        this.httpStatus = httpStatus;
+        this.httpStatus = 400;
     }
 } 

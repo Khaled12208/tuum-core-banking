@@ -131,6 +131,20 @@ public class ApiService {
         return response;
     }
 
+    public Response getCustomerAccounts(String customerId) {
+        Allure.addDescription("Getting accounts for customer: " + customerId);
+
+        Response response = given()
+                .spec(TestConfig.getRequestSpec())
+                .when()
+                .get("/accounts/customer/{customerId}", customerId)
+                .then()
+                .extract().response();
+
+        attachResponseToAllure(response, "Customer Accounts Response");
+        logger.info("Customer accounts requested for customer: {}", customerId);
+        return response;
+    }
 
     public Response makeRequest(String method, String endpoint, String requestBody, Map<String, String> headers) {
         Allure.addDescription("Making " + method + " request to " + endpoint);

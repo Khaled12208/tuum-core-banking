@@ -41,11 +41,9 @@ public class TransactionService {
     private final IdempotencyService idempotencyService;
 
     @Transactional
-    public TransactionResponse createTransaction(CreateTransactionRequest request, String idempotencyKey) {
+    public TransactionResponse createTransaction(CreateTransactionRequest request, String idempotencyKey) throws BusinessException {
         String requestId = traceIdGenerator.generateTraceId();
         log.info("Creating transaction with requestId: {} and idempotency key: {}", requestId, idempotencyKey);
-        
-
         
         // Fast in-memory idempotency check
         if (idempotencyService.isProcessed(idempotencyKey)) {
@@ -58,7 +56,6 @@ public class TransactionService {
             throw new BusinessException("Transaction already processed but not found in database");
         }
         
-        // Mark as processed in memory immediately to prevent duplicate processing
         idempotencyService.markAsProcessed(idempotencyKey);
         
         try {
@@ -67,7 +64,6 @@ public class TransactionService {
                 throw new ResourceNotFoundException("Account not found with id: " + request.getAccountId());
             }
             CreateTransactionEvent event = new CreateTransactionEvent();
-            event.setTransactionId(java.util.UUID.randomUUID().toString());
             event.setAccountId(request.getAccountId());
             event.setAmount(request.getAmount());
             event.setCurrency(request.getCurrency());
@@ -87,12 +83,19 @@ public class TransactionService {
                 30,
                     RequestType.CREATE
             );
+        } catch (InsufficientFundsException e) {
+            log.error("InsufficientFundsException caught in TransactionService: {}", idempotencyKey, e);
+            throw e;
         } catch (BusinessException e) {
-            log.error("Business error creating transaction: {}", idempotencyKey, e);
-            throw e; // Re-throw business exceptions as-is
+            log.error("BusinessException caught in TransactionService: {}", idempotencyKey, e);
+            throw e; 
         } catch (Exception e) {
-            log.error("Error creating transaction: {}", idempotencyKey, e);
-            throw new BusinessException("Failed to create transaction: " + e.getMessage());
+            log.error("Generic Exception caught in TransactionService: {} - Exception type: {}", idempotencyKey, e.getClass().getName(), e);
+            if (e instanceof BusinessException) {
+                throw (BusinessException) e;
+            } else {
+                throw new BusinessException("Failed to create transaction: " + e.getMessage());
+            }
         } finally {
             traceIdGenerator.clear();
         }
@@ -101,6 +104,24 @@ public class TransactionService {
     public void completeTransaction(Object event, MQMessageData messageData) {
         String idempotencyKey = messageData.getIdempotencyKey();
         String status = messageData.getStatus();
+
+        if (event instanceof ErrorNotification errorNotification) {
+            log.error("Transaction processing failed for idempotency key {}: {} - {}", 
+                idempotencyKey, errorNotification.getErrorCode(), errorNotification.getErrorMessage());
+            
+                        if (errorNotification.getErrorCode() == ErrorCode.INSUFFICIENT_FUNDS) {
+                InsufficientFundsException insufficientFundsException = new InsufficientFundsException(errorNotification.getErrorMessage());
+                eventPublisherService.completeRequestWithError(idempotencyKey, insufficientFundsException);
+            } else {
+                BusinessException businessException = new BusinessException(
+                    errorNotification.getErrorMessage(),
+                    errorNotification.getErrorCode().getCode(),
+                    errorNotification.getErrorCode().getHttpStatus()
+                );
+                eventPublisherService.completeRequestWithError(idempotencyKey, businessException);
+            }
+            return;
+        }
 
         if ("SUCCESS".equalsIgnoreCase(status) && event instanceof CreateTransactionEvent transactionCreatedEvent) {
             TransactionResponse response = new TransactionResponse();
@@ -112,8 +133,11 @@ public class TransactionService {
             response.setDescription(transactionCreatedEvent.getDescription());
             response.setBalanceAfterTransaction(transactionCreatedEvent.getBalanceAfterTransaction());
             eventPublisherService.completeRequest(idempotencyKey, response);
-        } else
+        } else {
+            log.warn("Unexpected event type or status for idempotency key {}: event={}, status={}", 
+                idempotencyKey, event.getClass().getSimpleName(), status);
             eventPublisherService.completeRequest(idempotencyKey, event);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -127,6 +151,13 @@ public class TransactionService {
 
     @Transactional(readOnly = true)
     public List<Transaction> getAccountTransactions(String accountId) {
+        // First check if the account exists
+        Account account = accountMapper.findAccountById(accountId);
+        if (account == null) {
+            throw new ResourceNotFoundException("Account not found with id: " + accountId);
+        }
+        
+        // Then return the transactions for the account
         return transactionMapper.findTransactionsByAccountId(accountId);
     }
 
@@ -145,7 +176,6 @@ public class TransactionService {
         response.setCreatedAt(transaction.getCreatedAt());
         response.setUpdatedAt(transaction.getUpdatedAt());
         
-        // Fetch and include balance information
         if (transaction.getBalanceId() != null) {
             var balance = balanceMapper.findBalanceById(transaction.getBalanceId());
             if (balance != null) {
@@ -162,5 +192,4 @@ public class TransactionService {
         
         return response;
     }
-
 } 

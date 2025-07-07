@@ -23,26 +23,29 @@ public class CreateAccountRequest {
         description = "Unique identifier for the customer",
         example = "CUST001",
         minLength = 1,
-        maxLength = 50
+        maxLength = 50,
+        required = true
     )
-    @NotBlank(message = "Customer ID is required")
+    @NotBlank(message = "Customer ID is mandatory and cannot be empty")
     @Size(min = 1, max = 50, message = "Customer ID must be between 1 and 50 characters")
     private String customerId;
     
     @Schema(
         description = "2-letter ISO country code where the account is opened",
         example = "EE",
-        pattern = "^[A-Z]{2}$"
+        pattern = "^[A-Z]{2}$",
+        required = true
     )
-    @NotBlank(message = "Country is required")
-    @Pattern(regexp = "^[A-Z]{2}$", message = "Country must be a 2-letter ISO country code")
+    @NotBlank(message = "Country is mandatory and cannot be empty")
+    @Pattern(regexp = "^[A-Z]{2}$", message = "Country must be a 2-letter ISO country code (e.g., EE, US, GB)")
     private String country;
     
     @Schema(
         description = "List of currencies supported by this account (1-10 currencies)",
-        example = "[\"EUR\", \"USD\"]"
+        example = "[\"EUR\", \"USD\"]",
+        required = true
     )
-    @NotEmpty(message = "At least one currency is required")
+    @NotEmpty(message = "At least one currency is mandatory")
     @Size(min = 1, max = 10, message = "Number of currencies must be between 1 and 10")
     private List<Currency> currencies;
 } 

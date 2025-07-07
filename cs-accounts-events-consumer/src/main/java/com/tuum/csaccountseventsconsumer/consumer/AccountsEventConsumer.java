@@ -21,7 +21,7 @@ public class AccountsEventConsumer {
     public void handleAccountCreatedEvent(Message message) {
         try {
             MQMessageData messageData = amqpMessageAdapter.adapt(message);
-            accountEventService.processAccountEvent(messageData);
+            accountEventService.processAccountCreatedEvent(messageData);
         } catch (Exception e) {
             log.error("Error processing account event", e);
         }

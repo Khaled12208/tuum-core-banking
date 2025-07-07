@@ -68,10 +68,7 @@ public class TransactionNotificationConsumer {
             MQMessageData messageData = new AmqpMessageAdapter().adapt(message);
             ErrorNotification errorNotification = objectMapper.readValue(messageData.getMessageBody(), ErrorNotification.class);
             String idempotencyKey = messageData.getIdempotencyKey();
-            
-            // Store error in cache for EventPublisherService
             errorCache.put(idempotencyKey, errorNotification);
-            
             log.info("Raw message body: {}", messageData.getMessageBody());
             log.info("Message headers: {}", message.getMessageProperties().getHeaders());
             log.info("Parsed TransactionErrorEvent: requestId={}, idempotencyKey={}, status={}", messageData.getRequestId(), messageData.getIdempotencyKey(), messageData.getStatus());

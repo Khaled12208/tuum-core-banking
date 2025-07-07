@@ -2,6 +2,10 @@ server:
   port: ${SERVER_PORT:8083}
   servlet:
     context-path: /api/v1
+  error:
+    include-stacktrace: never
+    include-message: always
+    include-binding-errors: always
 
 spring:
   application:
@@ -37,6 +41,19 @@ spring:
     configuration:
       map-underscore-to-camel-case: true
       log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# Logging configuration for clean error handling
+logging:
+  level:
+    com.tuum.fsaccountsservice: INFO
+    com.tuum.common.exception: DEBUG
+    org.springframework.web: WARN
+    org.springframework.security: WARN
+    org.hibernate: WARN
+    org.apache.ibatis: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
 # OpenAPI/Swagger configuration
 springdoc:

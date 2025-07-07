@@ -1,5 +1,9 @@
 server:
   port: 8084
+  error:
+    include-stacktrace: never
+    include-message: always
+    include-binding-errors: always
 
 spring:
   application:
@@ -45,10 +49,18 @@ mybatis:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.tuum.common.domain.entities
 
+# Logging configuration for clean error handling
 logging:
   level:
-    com.tuum.csaccountseventsconsumer: DEBUG
-    org.springframework.amqp: DEBUG
+    com.tuum.csaccountseventsconsumer: INFO
+    com.tuum.common.exception: DEBUG
+    org.springframework.amqp: WARN
+    org.springframework.web: WARN
+    org.hibernate: WARN
+    org.apache.ibatis: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
 # Actuator configuration
 management:

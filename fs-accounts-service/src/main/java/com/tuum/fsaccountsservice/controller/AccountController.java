@@ -7,6 +7,7 @@ import com.tuum.fsaccountsservice.dto.resonse.AccountResponse;
 import com.tuum.fsaccountsservice.util.DtoMapper;
 import com.tuum.common.exception.BusinessException;
 import com.tuum.common.dto.ErrorResponse;
+import com.tuum.common.validation.ValidIdempotencyKey;
 
 import com.tuum.fsaccountsservice.service.AccountService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,6 +20,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -101,17 +103,10 @@ public class AccountController {
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<AccountResponse> createAccount(
             @Parameter(description = "Account creation request", required = true)
-            @RequestBody CreateAccountRequest request,
+            @Valid @RequestBody CreateAccountRequest request,
             @Parameter(description = "Unique key to prevent duplicate processing", required = true, example = "req-123456")
-            @RequestHeader(value = "Idempotency-Key") String idempotencyKey) {
-        
+            @ValidIdempotencyKey @RequestHeader(value = "Idempotency-Key") String idempotencyKey) {
         log.info("Received request to create account for customer: {}", request.getCustomerId());
-
-        if (idempotencyKey == null || idempotencyKey.trim().isEmpty()) {
-            log.error("Idempotency-Key is missing");
-            throw new BusinessException("Idempotency-Key is missing");
-        }
-        
         AccountResponse result = accountService.createAccount(request, idempotencyKey);
         log.info("Account creation result: {}", result);
         if (result == null) {
@@ -206,22 +201,4 @@ public class AccountController {
                 .toList();
         return ResponseEntity.ok(responses);
     }
-
-//    @GetMapping("/search")
-//    public ResponseEntity<List<AccountResponse>> getAccountsByCurrencyAndAccountId(
-//            @RequestParam String currency,
-//            @RequestParam String accountId) {
-//        log.info("Received request to get accounts filtered by currency: {} and accountId: {}", currency, accountId);
-//        List<Account> accounts = accountService.getAllAccounts().stream()
-//                .filter(account -> accountId.equals(account.getAccountId()))
-//                .toList();
-//        List<AccountResponse> responses = accounts.stream()
-//                .map(account -> {
-//                    List<Balance> balances = accountService.getAccountBalances(account.getAccountId());
-//                    return DtoMapper.toAccountResponse(account, balances);
-//                })
-//                .toList();
-//
-//        return ResponseEntity.ok(responses);
-//    }
 } 

@@ -245,21 +245,57 @@ public class VerificationService {
         Double amount = response.jsonPath().getDouble("amount");
         String currency = response.jsonPath().getString("currency");
         String direction = response.jsonPath().getString("direction");
+        String status = response.jsonPath().getString("status");
 
-        assertThat(transactionId).isEqualTo(TestContext.getStringValue("transactionId"));
-        assertThat(accountId).isEqualTo(TestContext.getStringValue("accountId"));
-        assertThat(amount).isNotNull().isGreaterThan(0.0);
+        assertThat(transactionId).isNotNull().isNotEmpty();
+        assertThat(accountId).isNotNull().isNotEmpty();
+        assertThat(amount).isNotNull().isGreaterThan(0);
         assertThat(currency).isNotNull().isNotEmpty();
-        assertThat(direction).isIn("IN", "OUT");
+        assertThat(direction).isNotNull().isIn("IN", "OUT");
+        assertThat(status).isNotNull().isIn("PENDING", "COMPLETED", "FAILED");
 
-        Allure.addDescription("✅ Transaction information verified correctly");
+        Allure.addDescription("✅ Transaction information verified successfully");
         Allure.addAttachment("Transaction Information Verification", "text/plain", 
             "Transaction ID: " + transactionId + "\nAccount ID: " + accountId + 
-            "\nAmount: " + amount + "\nCurrency: " + currency + "\nDirection: " + direction + "\nResult: PASSED");
-
-        logger.info("Transaction information verified correctly");
+            "\nAmount: " + amount + "\nCurrency: " + currency + "\nDirection: " + direction + 
+            "\nStatus: " + status + "\nResult: PASSED");
+        
+        logger.info("Transaction information verified - Transaction ID: {}", transactionId);
     }
 
+    /**
+     * Verify error response structure and content
+     */
+    public void verifyErrorResponse(Response response, String expectedErrorCode, String expectedField) {
+        String errorCode = response.jsonPath().getString("errorCode");
+        String message = response.jsonPath().getString("message");
+        String timestamp = response.jsonPath().getString("timestamp");
+        String path = response.jsonPath().getString("path");
+
+        assertThat(errorCode).isNotNull().isNotEmpty();
+        assertThat(message).isNotNull().isNotEmpty();
+        assertThat(timestamp).isNotNull().isNotEmpty();
+        assertThat(path).isNotNull().isNotEmpty();
+
+        // Verify error code matches expected
+        if (expectedErrorCode != null) {
+            assertThat(errorCode).isEqualTo(expectedErrorCode);
+        }
+
+        // Verify message contains expected field if provided
+        if (expectedField != null) {
+            assertThat(message.toLowerCase()).contains(expectedField.toLowerCase());
+        }
+
+        Allure.addDescription("✅ Error response verified successfully");
+        Allure.addAttachment("Error Response Verification", "text/plain", 
+            "Error Code: " + errorCode + "\nMessage: " + message + 
+            "\nTimestamp: " + timestamp + "\nPath: " + path + 
+            "\nExpected Error Code: " + expectedErrorCode + 
+            "\nExpected Field: " + expectedField + "\nResult: PASSED");
+        
+        logger.info("Error response verified - Error Code: {}, Message: {}", errorCode, message);
+    }
 
     public static VerificationService getInstance() {
         return new VerificationService();

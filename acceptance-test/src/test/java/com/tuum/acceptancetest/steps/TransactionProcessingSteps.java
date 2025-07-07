@@ -19,10 +19,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Transaction Processing Step Definitions
- * Following SOLID principles with generic, reusable components
- */
+
 public class TransactionProcessingSteps extends BaseSteps {
     
     private static final Logger logger = LoggerFactory.getLogger(TransactionProcessingSteps.class);
@@ -37,11 +34,9 @@ public class TransactionProcessingSteps extends BaseSteps {
     @Given("I have an existing account with sufficient balance")
     @Step("Create account with sufficient balance for transactions")
     public void iHaveAnExistingAccountWithSufficientBalance() {
-        // Create an account first if not exists
         if (!TestContext.containsKey("accountId")) {
             Allure.addDescription("Creating a new account with sufficient balance for transaction testing");
             
-            // Create account with initial balance
             String customerId = TestDataGenerator.generateUniqueCustomerId();
             response = apiService.createAccountWithBalance(customerId, "EE", "EUR", 1000.00);
             verificationService.verifyAccountCreation(response);

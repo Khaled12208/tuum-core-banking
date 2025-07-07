@@ -7,10 +7,11 @@ import com.tuum.common.domain.entities.ProcessedMessage;
 import com.tuum.common.dto.mq.CreateTransactionEvent;
 import com.tuum.common.dto.mq.MQMessageData;
 import com.tuum.common.types.RabbitMQConfig;
-import com.tuum.common.exception.ProcessingException;
+import com.tuum.common.exception.BusinessException;
 import com.tuum.common.types.ErrorCode;
 import com.tuum.common.types.TransactionDirection;
 import com.tuum.common.types.TransactionStatus;
+import com.tuum.common.util.IdGenerator;
 import com.tuum.csaccountseventsconsumer.mapper.BalanceMapper;
 import com.tuum.csaccountseventsconsumer.mapper.ProcessedMessageMapper;
 import com.tuum.csaccountseventsconsumer.mapper.TransactionMapper;
@@ -22,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import com.tuum.common.exception.InsufficientFundsException;
 
 @Service
 @RequiredArgsConstructor
@@ -38,23 +40,23 @@ public class TransactionEventService {
     public void processTransactionCreatedEvent(MQMessageData messageData) {
         try {
             CreateTransactionEvent event = objectMapper.readValue(messageData.getMessageBody(), CreateTransactionEvent.class);
-            
 
-            
             switch (messageData.getRequestType()) {
                 case CREATE:
                     handleCreate(event, messageData);
                     break;
                 default:
-                    throw new ProcessingException(
+                    throw new BusinessException(
                             "Non supported process",
-                            RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
-                            RabbitMQConfig.TRANSACTIONS_ERRORS_ROUTING_KEY.getValue(),
-                            "TRANSACTION_PROCESSING_ERROR",
-                            messageData.getRequestId(),
-                            null
+                            "TRANSACTION_PROCESSING_ERROR"
                     );
             }
+        } catch (InsufficientFundsException e) {
+            log.error("Insufficient funds error processing transaction: {}, idempotencyKey: {} , requestId: {}", e.getMessage(), messageData.getIdempotencyKey(), messageData.getRequestId());
+            notificationService.publishErrorResponse(RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(), RabbitMQConfig.TRANSACTIONS_ERROR_ROUTING_KEY.getValue(), messageData, ErrorCode.INSUFFICIENT_FUNDS, e.getMessage());
+        } catch (BusinessException e) {
+            log.error("Business error processing transaction: {}, idempotencyKey: {} , requestId: {}", e.getMessage(), messageData.getIdempotencyKey(), messageData.getRequestId());
+            notificationService.publishErrorResponse(RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(), RabbitMQConfig.TRANSACTIONS_ERROR_ROUTING_KEY.getValue(), messageData, ErrorCode.TRANSACTION_CREATION_FAILED, e.getMessage());
         } catch (Exception e) {
             log.error("Error processing transaction: {}, idempotencyKey: {} , requestId: {}", e.getMessage(), messageData.getIdempotencyKey(), messageData.getRequestId());
             notificationService.publishErrorResponse(RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(), RabbitMQConfig.TRANSACTIONS_ERROR_ROUTING_KEY.getValue(), messageData, ErrorCode.TRANSACTION_CREATION_FAILED, e.getMessage());
@@ -64,13 +66,11 @@ public class TransactionEventService {
     private void handleCreate(CreateTransactionEvent event, MQMessageData messageData) {
         String messageId = Optional.ofNullable(event.getIdempotencyKey()).orElse(event.getTransactionId());
 
-        // Check database as source of truth
         if (processedMessageMapper.existsProcessedMessage(messageId)) {
             log.info("Transaction already processed in database: {}", messageId);
             publishSuccessNotificationForExistingTransaction(event.getAccountId(), messageData);
             return;
         }
-
 
 
         if (transactionMapper.existsTransactionByIdempotencyKey(event.getIdempotencyKey())) {
@@ -85,7 +85,6 @@ public class TransactionEventService {
                     "No " + event.getCurrency() + " balance found for account " + event.getAccountId());
         }
 
-        // Set the balanceId in the event
         event.setBalanceId(balance.getBalanceId());
 
         BigDecimal newBalance = calculateNewBalance(balance, event);
@@ -93,7 +92,6 @@ public class TransactionEventService {
 
         Transaction transaction = createAndInsertTransaction(event, newBalance);
         
-        // Record the processed message as source of truth
         recordProcessedMessage(messageId, event.getTransactionId(), event.getIdempotencyKey());
 
         notificationService.publishSuccessNotification(
@@ -106,7 +104,6 @@ public class TransactionEventService {
                 messageData.getIdempotencyKey(),
                 null
         );
-
         log.info("Transaction processed successfully: {}", event.getTransactionId());
     }
 
@@ -115,8 +112,9 @@ public class TransactionEventService {
             return balance.getAvailableAmount().add(event.getAmount());
         } else if (TransactionDirection.OUT == event.getDirection()) {
             if (balance.getAvailableAmount().compareTo(event.getAmount()) < 0) {
-                throw businessException(event, "INSUFFICIENT_FUNDS",
-                        "Available: " + balance.getAvailableAmount() + ", Required: " + event.getAmount());
+                throw new InsufficientFundsException(
+                    "Available: " + balance.getAvailableAmount() + ", Required: " + event.getAmount()
+                );
             }
             return balance.getAvailableAmount().subtract(event.getAmount());
         } else {
@@ -132,20 +130,18 @@ public class TransactionEventService {
         
         int updatedRows = balanceMapper.updateBalance(balance, oldVersionNumber);
         if (updatedRows == 0) {
-            throw new ProcessingException(
+            throw new BusinessException(
                     "Balance was modified by another transaction. Please retry.",
-                    RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
-                    RabbitMQConfig.TRANSACTIONS_ERROR_ROUTING_KEY.getValue(),
-                    "CONCURRENT_MODIFICATION",
-                    balance.getAccountId(),
-                    null
+                    "CONCURRENT_MODIFICATION"
             );
         }
     }
 
     private Transaction createAndInsertTransaction(CreateTransactionEvent event, BigDecimal newBalance) {
         Transaction transaction = new Transaction();
-        transaction.setTransactionId(event.getTransactionId());
+        String transactionId = IdGenerator.generateTransactionId();
+        log.info("Generated transaction ID: {}", transactionId);
+        transaction.setTransactionId(transactionId);
         transaction.setAccountId(event.getAccountId());
         transaction.setBalanceId(event.getBalanceId());
         transaction.setAmount(event.getAmount());
@@ -187,14 +183,7 @@ public class TransactionEventService {
         );
     }
 
-    private ProcessingException businessException(CreateTransactionEvent event, String errorCode, String errorMessage) {
-        return new ProcessingException(
-                errorMessage,
-                RabbitMQConfig.TUUM_BANKING_EXCHANGE.getValue(),
-                RabbitMQConfig.TRANSACTIONS_ERROR_ROUTING_KEY.getValue(),
-                errorCode,
-                event.getAccountId(),
-                null
-        );
+    private BusinessException businessException(CreateTransactionEvent event, String errorCode, String errorMessage) {
+        return new BusinessException(errorMessage, errorCode);
     }
 }
