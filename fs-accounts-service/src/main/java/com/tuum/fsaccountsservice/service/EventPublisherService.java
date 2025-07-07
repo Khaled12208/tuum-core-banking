@@ -19,10 +19,7 @@ import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import com.tuum.common.exception.InsufficientFundsException;
 
 @Service
@@ -36,6 +33,8 @@ public class EventPublisherService {
     private final TransactionNotificationConsumer transactionNotificationConsumer;
 
     private final ConcurrentHashMap<String, CompletableFuture<?>> pendingRequests = new ConcurrentHashMap<>();
+    
+    private final ScheduledExecutorService errorCheckerScheduler = Executors.newScheduledThreadPool(2);
 
     public <T> T publishEventAndWaitForResponse(Object event, String routingKey, String idempotencyKey, String requestId, int timeoutSeconds, RequestType requestType) throws InsufficientFundsException, BusinessException {
         log.info("Publishing event to routing key: {} with idempotency key: {} and request type: {} , request-id {}", routingKey, idempotencyKey, requestType,requestId);
@@ -128,20 +127,20 @@ public class EventPublisherService {
 
     @SuppressWarnings("unchecked")
     private <T> T waitForResponseWithErrorChecking(CompletableFuture<T> future, String idempotencyKey, int timeoutSeconds, RequestType requestType) throws InsufficientFundsException, BusinessException {
-        long startTime = System.currentTimeMillis();
         long timeoutMillis = timeoutSeconds * 1000L;
-        long checkInterval = 50;
-        while (System.currentTimeMillis() - startTime < timeoutMillis) {
-            if (future.isDone()) {
-                try {
-                    return future.get();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new BusinessException("Request was interrupted");
-                } catch (Exception e) {
-                    throw new BusinessException("Request failed: " + e.getMessage());
-                }
+        
+        CompletableFuture<T> timeoutFuture = new CompletableFuture<>();
+        errorCheckerScheduler.schedule(() -> {
+            if (!future.isDone()) {
+                timeoutFuture.completeExceptionally(new java.util.concurrent.TimeoutException("Request timed out"));
             }
+        }, timeoutMillis, TimeUnit.MILLISECONDS);
+        
+        ScheduledFuture<?> errorChecker = errorCheckerScheduler.scheduleAtFixedRate(() -> {
+            if (future.isDone() || timeoutFuture.isDone()) {
+                return; 
+            }
+            
             ErrorNotification error = null;
             error = accountNotificationConsumer.getErrorForIdempotencyKey(idempotencyKey);
             if (error != null) {
@@ -152,12 +151,13 @@ public class EventPublisherService {
                     transactionNotificationConsumer.removeErrorFromCache(idempotencyKey);
                 }
             }
+            
             if (error != null) {
                 log.error("Error detected for idempotency key {}: {} - {}", idempotencyKey, error.getErrorCode(), error.getErrorMessage());
+                
                 if (error.getErrorCode() == ErrorCode.INSUFFICIENT_FUNDS) {
                     InsufficientFundsException insufficientFundsException = new InsufficientFundsException(error.getErrorMessage());
                     future.completeExceptionally(insufficientFundsException);
-                    throw insufficientFundsException;
                 } else {
                     BusinessException businessException = new BusinessException(
                         error.getErrorMessage(), 
@@ -165,21 +165,38 @@ public class EventPublisherService {
                         error.getErrorCode().getHttpStatus()
                     );
                     future.completeExceptionally(businessException);
-                    throw businessException;
                 }
+            }
+        }, 0, 50, TimeUnit.MILLISECONDS);
+        
+        try {
+            return CompletableFuture.anyOf(future, timeoutFuture).thenApply(result -> {
+                if (result instanceof Throwable) {
+                    throw new CompletionException((Throwable) result);
+                }
+                return (T) result;
+            }).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException("Request was interrupted");
+        } catch (Exception e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof java.util.concurrent.TimeoutException) {
+                log.error("Timeout waiting for response for idempotency key: {} - consumer may be down", idempotencyKey);
+                throw new BusinessException("Request timed out - consumer may not be running");
+            } else if (cause instanceof InsufficientFundsException) {
+                throw (InsufficientFundsException) cause;
+            } else if (cause instanceof BusinessException) {
+                throw (BusinessException) cause;
+            } else if (e instanceof InsufficientFundsException) {
+                throw (InsufficientFundsException) e;
+            } else if (e instanceof BusinessException) {
+                throw (BusinessException) e;
             } else {
-                if (System.currentTimeMillis() % 1000 < 50) { 
-                    log.debug("No error found for idempotency key: {} (checking...)", idempotencyKey);
-                }
+                throw new BusinessException("Request failed: " + e.getMessage());
             }
-            try {
-                Thread.sleep(checkInterval);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new BusinessException("Request was interrupted");
-            }
+        } finally {
+            errorChecker.cancel(false);
         }
-        log.error("Timeout waiting for response or error for idempotency key: {} - consumer may be down", idempotencyKey);
-        throw new BusinessException("Request timed out - consumer may not be running");
     }
 } 

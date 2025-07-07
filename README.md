@@ -10,13 +10,21 @@ This project is a **microservices-based core banking platform** designed to hand
   - In this implementation, some API calls **wait for completion notifications** before responding, to satisfy specific requirements.
 - **RabbitMQ** is used as the message broker.
 - Event publishing and response flow:
-  - Commands are published to `{entity}-create-queue`.
-  - Notifications or errors are received via `{entity}-notification-queue` or `{entity}-error-queue`.
-- A custom RabbitMQ listener:
+  - Commands are published to `{entity}-create-queue`. by main service
+  - Commands are consumed from `{entity}-create-queue`. by costumer  service
+  - Notifications or errors are publish  via `{entity}-notification-queue` or `{entity}-error-queue`. by consumer sink
+  - Notifications or errors are consumed  via `{entity}-notification-queue` or `{entity}-error-queue`. by main service
 
-  - Listens for completion notifications.
-  - Completes the original request by processing the response.
+- A custom RabbitMQ listener:
+  - Listen for the command in the event queue
+  - Listens for completion notifications while having ScheduledExecutorService to listen to error topic in the same time and if received exception it will react it received notification it will react
   - Designed to optionally notify clients via callback endpoints in future enhancements.
+
+- **Features**
+  - double submissions handled by ConcurrentMap to prevent double submission 
+  - database has optimism look to support concurrency and isolation
+  - UUID is binged generated in the consumer side avoiding DB generation of UUID 
+
 
 - **Common Issues**
 
@@ -24,14 +32,15 @@ This project is a **microservices-based core banking platform** designed to hand
   - Database connection issues
   - RabbitMQ connection issues: for liner
   - common library is not compiling well
-  - cleaning the code
+  - redundant code :D no was not time to clean
 
 - **Future-enactments**
-- Exception handling should be better
-- using design pattern
-- loggin
-- full ASYNC processing
-- using AUTH like JWT alongside with API-KEY for security
+  - Exception handling should be better
+  - using design pattern
+  - loggin
+  - full ASYNC processing
+  - using AUTH like JWT alongside with API-KEY for security
+  -  DELETE Enndpoint to check cascaded delete 
 
 - ** Development Machine Performance for transcription endpoint **
 

@@ -25,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import com.tuum.fsaccountsservice.dto.resonse.BalanceResponse;
 
 @Service
@@ -45,10 +44,8 @@ public class TransactionService {
         String requestId = traceIdGenerator.generateTraceId();
         log.info("Creating transaction with requestId: {} and idempotency key: {}", requestId, idempotencyKey);
         
-        // Fast in-memory idempotency check
         if (idempotencyService.isProcessed(idempotencyKey)) {
             log.info("Transaction already processed in memory, skipping: {}", idempotencyKey);
-            // Return existing transaction from database if available
             Transaction existingTransaction = transactionMapper.findTransactionByIdempotencyKey(idempotencyKey);
             if (existingTransaction != null) {
                 return createResponseFromTransaction(existingTransaction);
@@ -151,13 +148,10 @@ public class TransactionService {
 
     @Transactional(readOnly = true)
     public List<Transaction> getAccountTransactions(String accountId) {
-        // First check if the account exists
         Account account = accountMapper.findAccountById(accountId);
         if (account == null) {
             throw new ResourceNotFoundException("Account not found with id: " + accountId);
         }
-        
-        // Then return the transactions for the account
         return transactionMapper.findTransactionsByAccountId(accountId);
     }
 
