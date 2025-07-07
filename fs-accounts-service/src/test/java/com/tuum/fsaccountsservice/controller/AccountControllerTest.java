@@ -3,9 +3,13 @@ package com.tuum.fsaccountsservice.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tuum.common.domain.entities.Account;
 import com.tuum.common.domain.entities.Balance;
+import com.tuum.common.exception.BusinessException;
+import com.tuum.common.exception.ResourceNotFoundException;
 import com.tuum.fsaccountsservice.dto.requests.CreateAccountRequest;
 import com.tuum.fsaccountsservice.dto.resonse.AccountResponse;
 import com.tuum.fsaccountsservice.service.AccountService;
+import com.tuum.fsaccountsservice.utils.TestConstants;
+import com.tuum.fsaccountsservice.utils.TestDataBuilder;
 import com.tuum.common.types.Currency;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,17 +23,25 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
 
 @ExtendWith(MockitoExtension.class)
 class AccountControllerTest {
@@ -46,6 +58,7 @@ class AccountControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(accountController)
+                .setControllerAdvice(new TestExceptionHandler())
                 .build();
         objectMapper = new ObjectMapper();
     }
@@ -54,166 +67,196 @@ class AccountControllerTest {
     @CsvSource({
         "CUST001, EE, EUR,USD",
         "CUST002, SE, SEK,GBP",
-        "CUST003, GB, GBP,EUR"
+        "CUST003, GB, GBP,EUR",
+        "CUST004, FI, EUR,USD",
+        "CUST005, NO, EUR,GBP"
     })
     void testCreateAccount_Success(String customerId, String country, String currency1, String currency2) throws Exception {
-        // Arrange
-        CreateAccountRequest request = new CreateAccountRequest();
-        request.setCustomerId(customerId);
-        request.setCountry(country);
-        request.setCurrencies(Arrays.asList(Currency.valueOf(currency1), Currency.valueOf(currency2)));
+        CreateAccountRequest request = TestDataBuilder.createAccountRequest()
+                .customerId(customerId)
+                .country(country)
+                .currencies(Arrays.asList(Currency.valueOf(currency1), Currency.valueOf(currency2)))
+                .build();
 
-        AccountResponse mockResponse = createMockAccountResponse(customerId, country);
+        AccountResponse mockResponse = TestDataBuilder.accountResponse()
+                .accountId(TestConstants.DEFAULT_ACCOUNT_ID)
+                .customerId(customerId)
+                .country(country)
+                .balances(createMockBalanceResponses(currency1, currency2))
+                .build();
 
         when(accountService.createAccount(any(CreateAccountRequest.class), anyString()))
                 .thenReturn(mockResponse);
 
-        // Act & Assert
         mockMvc.perform(post("/accounts")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .header("Idempotency-Key", "test-key-123")
+                        .header(TestConstants.IDEMPOTENCY_KEY_HEADER, TestConstants.TEST_IDEMPOTENCY_KEY)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.accountId").value("ACC123"))
+                .andExpect(jsonPath("$.accountId").value(TestConstants.DEFAULT_ACCOUNT_ID))
                 .andExpect(jsonPath("$.customerId").value(customerId))
                 .andExpect(jsonPath("$.country").value(country))
                 .andExpect(jsonPath("$.balances").isArray())
                 .andExpect(jsonPath("$.balances.length()").value(2));
 
-        verify(accountService, times(1)).createAccount(any(CreateAccountRequest.class), eq("test-key-123"));
+        verify(accountService, times(1)).createAccount(any(CreateAccountRequest.class), eq(TestConstants.TEST_IDEMPOTENCY_KEY));
     }
 
-    // @ParameterizedTest
-    // @ValueSource(strings = {"ACC123", "ACC456", "ACC789"})
-    // void testGetAccount_Success(String accountId) throws Exception {
-    //     // Arrange
-    //     Account mockAccount = createMockAccount(accountId, "CUST001", "EE");
-    //     AccountResponse mockResponse = createMockAccountResponse("CUST001", "EE");
-        
-    //     when(accountService.getAccount(accountId)).thenReturn(mockAccount);
-
-    //     // Act & Assert
-    //     mockMvc.perform(get("/accounts/" + accountId))
-    //             .andExpect(status().isOk())
-    //             .andExpect(jsonPath("$.accountId").value(accountId))
-    //             .andExpect(jsonPath("$.customerId").value("CUST001"))
-    //             .andExpect(jsonPath("$.country").value("EE"));
-
-    //     verify(accountService, times(1)).getAccount(accountId);
-    // }
-
-    // @ParameterizedTest
-    // @CsvSource({
-    //     "CUST001, 2",
-    //     "CUST002, 1",
-    //     "CUST003, 3"
-    // })
-    // void testGetAccountsByCustomerId_Success(String customerId, int expectedCount) throws Exception {
-    //     // Arrange
-    //     List<Account> mockAccounts = Arrays.asList(
-    //         createMockAccount("ACC1", customerId, "EE"),
-    //         createMockAccount("ACC2", customerId, "SE")
-    //     );
-        
-    //     when(accountService.getAccountsByCustomerId(customerId)).thenReturn(mockAccounts);
-
-    //     // Act & Assert
-    //     mockMvc.perform(get("/accounts/customer/" + customerId))
-    //             .andExpect(status().isOk())
-    //             .andExpect(jsonPath("$").isArray())
-    //             .andExpect(jsonPath("$.length()").value(expectedCount));
-
-    //     verify(accountService, times(1)).getAccountsByCustomerId(customerId);
-    // }
-
-    // @Test
-    // void testGetAllAccounts_Success() throws Exception {
-    //     // Arrange
-    //     List<Account> mockAccounts = Arrays.asList(
-    //         createMockAccount("ACC1", "CUST001", "EE"),
-    //         createMockAccount("ACC2", "CUST002", "SE"),
-    //         createMockAccount("ACC3", "CUST003", "GB")
-    //     );
-        
-    //     when(accountService.getAllAccounts()).thenReturn(mockAccounts);
-
-    //     // Act & Assert
-    //     mockMvc.perform(get("/accounts"))
-    //             .andExpect(status().isOk())
-    //             .andExpect(jsonPath("$").isArray())
-    //             .andExpect(jsonPath("$.length()").value(3));
-
-    //     verify(accountService, times(1)).getAllAccounts();
-    // }
-
-    // @ParameterizedTest
-    // @ValueSource(strings = {"ACC123", "ACC456", "ACC789"})
-    // void testGetAccountBalances_Success(String accountId) throws Exception {
-    //     // Arrange
-    //     List<Balance> mockBalances = Arrays.asList(
-    //         createMockBalance(accountId, Currency.EUR, new BigDecimal("100.00")),
-    //         createMockBalance(accountId, Currency.USD, new BigDecimal("200.00"))
-    //     );
-        
-    //     when(accountService.getAccountBalances(accountId)).thenReturn(mockBalances);
-
-    //     // Act & Assert
-    //     mockMvc.perform(get("/accounts/" + accountId + "/balances"))
-    //             .andExpect(status().isOk())
-    //             .andExpect(jsonPath("$").isArray())
-    //             .andExpect(jsonPath("$.length()").value(2));
-
-    //     verify(accountService, times(1)).getAccountBalances(accountId);
-    // }
-
-    // Helper methods
-    private Account createMockAccount(String accountId, String customerId, String country) {
-        Account account = new Account();
-        account.setAccountId(accountId);
-        account.setCustomerId(customerId);
-        account.setCountry(country);
-        account.setCreatedAt(LocalDateTime.now());
-        account.setUpdatedAt(LocalDateTime.now());
-        return account;
+    @Test
+    void testCreateAccount_MissingIdempotencyKey_ThrowsException() throws Exception {
+        CreateAccountRequest request = TestDataBuilder.createAccountRequest().build();
+        mockMvc.perform(post("/accounts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
     }
 
-    private Balance createMockBalance(String accountId, Currency currency, BigDecimal amount) {
-        Balance balance = new Balance();
-        balance.setBalanceId("BAL123");
-        balance.setAccountId(accountId);
-        balance.setCurrency(currency);
-        balance.setAvailableAmount(amount);
-        balance.setVersionNumber(1);
-        balance.setCreatedAt(LocalDateTime.now());
-        balance.setUpdatedAt(LocalDateTime.now());
-        return balance;
+    @ParameterizedTest
+    @ValueSource(strings = {"ACC123", "ACC456", "ACC789", "ACC101", "ACC202"})
+    void testGetAccount_Success(String accountId) throws Exception {
+        Account mockAccount = TestDataBuilder.account()
+                .accountId(accountId)
+                .customerId(TestConstants.DEFAULT_CUSTOMER_ID)
+                .country(TestConstants.DEFAULT_COUNTRY)
+                .balances(createMockBalances(accountId))
+                .build();
+
+        when(accountService.getAccount(accountId)).thenReturn(mockAccount);
+
+        mockMvc.perform(get("/accounts/{accountId}", accountId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accountId").value(accountId))
+                .andExpect(jsonPath("$.customerId").value(TestConstants.DEFAULT_CUSTOMER_ID))
+                .andExpect(jsonPath("$.country").value(TestConstants.DEFAULT_COUNTRY))
+                .andExpect(jsonPath("$.balances").isArray());
+
+        verify(accountService, times(1)).getAccount(accountId);
     }
 
-    private AccountResponse createMockAccountResponse(String customerId, String country) {
-        AccountResponse response = new AccountResponse();
-        response.setAccountId("ACC123");
-        response.setCustomerId(customerId);
-        response.setCountry(country);
-        response.setCreatedAt(LocalDateTime.now());
-        response.setUpdatedAt(LocalDateTime.now());
+    @ParameterizedTest
+    @ValueSource(strings = {"ACC123", "ACC456", "ACC789", "ACC101", "ACC202"})
+    void testGetAccount_NotFound_ThrowsException(String accountId) throws Exception {
+        when(accountService.getAccount(accountId))
+                .thenThrow(new ResourceNotFoundException(TestConstants.ACCOUNT_NOT_FOUND_MESSAGE + accountId));
+        mockMvc.perform(get("/accounts/{accountId}", accountId))
+                .andExpect(status().isNotFound());
 
-        com.tuum.fsaccountsservice.dto.resonse.BalanceResponse balance1 = new com.tuum.fsaccountsservice.dto.resonse.BalanceResponse();
-        balance1.setBalanceId("BAL123");
-        balance1.setAccountId("ACC123");
-        balance1.setCurrency(Currency.EUR);
-        balance1.setAvailableAmount(BigDecimal.valueOf(100.00));
-        balance1.setCreatedAt(LocalDateTime.now());
-        balance1.setUpdatedAt(LocalDateTime.now());
+        verify(accountService, times(1)).getAccount(accountId);
+    }
 
-        com.tuum.fsaccountsservice.dto.resonse.BalanceResponse balance2 = new com.tuum.fsaccountsservice.dto.resonse.BalanceResponse();
-        balance2.setBalanceId("BAL124");
-        balance2.setAccountId("ACC123");
-        balance2.setCurrency(Currency.USD);
-        balance2.setAvailableAmount(BigDecimal.valueOf(50.00));
-        balance2.setCreatedAt(LocalDateTime.now());
-        balance2.setUpdatedAt(LocalDateTime.now());
+    @ParameterizedTest
+    @ValueSource(strings = {"CUST001", "CUST002", "CUST003", "CUST004", "CUST005"})
+    void testGetAccountsByCustomerId_Success(String customerId) throws Exception {
+        List<Account> mockAccounts = Arrays.asList(
+                TestDataBuilder.account()
+                        .accountId("ACC1")
+                        .customerId(customerId)
+                        .country("EE")
+                        .build(),
+                TestDataBuilder.account()
+                        .accountId("ACC2")
+                        .customerId(customerId)
+                        .country("SE")
+                        .build()
+        );
 
-        response.setBalances(Arrays.asList(balance1, balance2));
-        return response;
+        when(accountService.getAccountsByCustomerId(customerId)).thenReturn(mockAccounts);
+
+        mockMvc.perform(get("/accounts/customer/{customerId}", customerId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].customerId").value(customerId))
+                .andExpect(jsonPath("$[1].customerId").value(customerId));
+
+        verify(accountService, times(1)).getAccountsByCustomerId(customerId);
+    }
+
+    @Test
+    void testGetAllAccounts_Success() throws Exception {
+        List<Account> mockAccounts = Arrays.asList(
+                TestDataBuilder.account()
+                        .accountId("ACC1")
+                        .customerId("CUST001")
+                        .country("EE")
+                        .build(),
+                TestDataBuilder.account()
+                        .accountId("ACC2")
+                        .customerId("CUST002")
+                        .country("SE")
+                        .build(),
+                TestDataBuilder.account()
+                        .accountId("ACC3")
+                        .customerId("CUST003")
+                        .country("GB")
+                        .build()
+        );
+
+        when(accountService.getAllAccounts()).thenReturn(mockAccounts);
+        mockMvc.perform(get("/accounts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(3));
+
+        verify(accountService, times(1)).getAllAccounts();
+    }
+
+    @Test
+    void testCreateAccount_ServiceThrowsBusinessException_ReturnsError() throws Exception {
+        CreateAccountRequest request = TestDataBuilder.createAccountRequest().build();
+
+        when(accountService.createAccount(any(CreateAccountRequest.class), anyString()))
+                .thenThrow(new BusinessException("Account creation failed"));
+        mockMvc.perform(post("/accounts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header(TestConstants.IDEMPOTENCY_KEY_HEADER, TestConstants.TEST_IDEMPOTENCY_KEY)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isInternalServerError());
+    }
+
+    private List<Balance> createMockBalances(String accountId) {
+        return Arrays.asList(
+                TestDataBuilder.balance()
+                        .accountId(accountId)
+                        .currency(Currency.EUR)
+                        .availableAmount(BigDecimal.valueOf(1000.00))
+                        .build(),
+                TestDataBuilder.balance()
+                        .accountId(accountId)
+                        .currency(Currency.USD)
+                        .availableAmount(BigDecimal.valueOf(500.00))
+                        .build()
+        );
+    }
+
+    private List<com.tuum.fsaccountsservice.dto.resonse.BalanceResponse> createMockBalanceResponses(String currency1, String currency2) {
+        return Arrays.asList(
+                TestDataBuilder.balanceResponse()
+                        .currency(Currency.valueOf(currency1))
+                        .availableAmount(BigDecimal.valueOf(1000.00))
+                        .build(),
+                TestDataBuilder.balanceResponse()
+                        .currency(Currency.valueOf(currency2))
+                        .availableAmount(BigDecimal.valueOf(500.00))
+                        .build()
+        );
+    }
+
+    @ControllerAdvice
+    static class TestExceptionHandler {
+        
+        @ExceptionHandler(BusinessException.class)
+        @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+        @ResponseBody
+        public String handleBusinessException(BusinessException e) {
+            return "{\"error\":\"" + e.getMessage() + "\"}";
+        }
+        
+        @ExceptionHandler(ResourceNotFoundException.class)
+        @ResponseStatus(HttpStatus.NOT_FOUND)
+        @ResponseBody
+        public String handleResourceNotFoundException(ResourceNotFoundException e) {
+            return "{\"error\":\"" + e.getMessage() + "\"}";
+        }
     }
 }
