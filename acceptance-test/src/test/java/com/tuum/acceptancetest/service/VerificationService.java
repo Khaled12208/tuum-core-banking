@@ -79,7 +79,7 @@ public class VerificationService {
 
 
     public void verifyTransactionCreation(Response response) {
-        verifyResponseStatus(response, 200, "Transaction Creation");
+        verifyResponseStatus(response, 201, "Transaction Creation");
         
         String transactionId = response.jsonPath().getString("transactionId");
         String accountId = response.jsonPath().getString("accountId");

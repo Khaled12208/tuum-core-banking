@@ -106,19 +106,20 @@ graph TB
 ### Environment Setup
 
 1. **How To start the project locally**
+
    ```bash
-    docker-compose up postgres rabbitmq -d
-    ./gradlew :fs-accounts-service:build
-    ./gradlew :cs-accounts-events-consumer:build
-    ./gradlew :common-lib:build
-    ./gradlew :fs-accounts-service:bootRun
-    ./gradlew :cs-accounts-events-consumer:bootRun
+      docker-compose up postgres rabbitmq -d
+     ./gradlew :common-lib:build :fs-accounts-service:build :cs-accounts-events-consumer:build -x test
+     ./gradlew :fs-accounts-service:bootRun
+     ./gradlew :cs-accounts-events-consumer:bootRun
    ```
+
 2. **How To start the project on docker**
 
    ```bash
     docker-compose up -d
-
+   OR
+    docker-compose up --build
    ```
 
 3. **How To start the project on docker**

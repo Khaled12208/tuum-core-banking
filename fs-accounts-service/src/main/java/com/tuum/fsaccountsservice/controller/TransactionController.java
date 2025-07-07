@@ -19,6 +19,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -124,7 +125,8 @@ public class TransactionController {
         try {
 
             TransactionResponse result = transactionService.createTransaction(request, idempotencyKey);
-            return ResponseEntity.ok(result);
+//            return ResponseEntity.ok(result);
+            return ResponseEntity.status(HttpStatus.CREATED).body(result);
         } catch (InsufficientFundsException e) {
             log.warn("Insufficient funds for transaction: {}", e.getMessage());
             throw e;

@@ -211,7 +211,7 @@ public class ApiService {
                     .when()
                     .post("/transactions")
                     .then()
-                    .statusCode(200)
+                    .statusCode(201)
                     .extract().response();
 
             Allure.addAttachment("Transaction " + i + " Response", "application/json", 
