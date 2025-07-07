@@ -87,14 +87,15 @@ graph TB
 
 ## System Components
 
-| Component                       | Port  | URL                                                  | Description                                                  | Technology             |
-| ------------------------------- | ----- | ---------------------------------------------------- | ------------------------------------------------------------ | ---------------------- |
-| **fs-accounts-service**         | 8084  | http://localhost:8084                                | Main REST API service for account and transaction management | Spring Boot, WebSocket |
-| **cs-accounts-events-consumer** | 8082  | http://localhost:8082                                | Event consumer for processing account and transaction events | Spring Boot, MyBatis   |
-| **PostgreSQL Database**         | 5432  | -                                                    | Primary database for accounts, balances, and transactions    | PostgreSQL 15          |
-| **RabbitMQ AMQP**               | 5672  | -                                                    | Message broker for event-driven communication                | RabbitMQ 3.13.7        |
-| **RabbitMQ Management**         | 15672 | http://localhost:15672                               | Web UI for RabbitMQ monitoring and management                | RabbitMQ Management    |
-| **Swagger UI**                  | 8083  | http://localhost:8083/api/v1/swagger-ui/index.html#/ | API documentation and testing interface                      | SpringDoc OpenAPI      |
+| Component                       | Port  | URL                                                  |
+|---------------------------------|-------|------------------------------------------------------|
+| **fs-accounts-service**         | 8084  | http://localhost:8084                                |
+| **cs-accounts-events-consumer** | 8082  | http://localhost:8082                                |
+| **PostgreSQL Database**         | 5432  | -                                                    |
+| **RabbitMQ AMQP**               | 5672  | -                                                    |
+| **RabbitMQ Management**         | 15672 | http://localhost:15672                               |
+| **Swagger UI**                  | 8083  | http://localhost:8083/api/v1/swagger-ui/index.html#/ |
+| **Allure-report**               | 8085  | http://localhost:8085/                               |     
 
 ## Quick Start
 
@@ -127,7 +128,12 @@ graph TB
    ```bash
     ./gradlew :acceptance-test:allureReport
      ./gradlew :acceptance-test:allureServe
+   
+   or 
+   docker-compose build acceptance-test && docker-compose --profile test up -d acceptance-test
+   
    ```
+   
 
 ### Database Configuration
 

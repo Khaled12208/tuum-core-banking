@@ -119,7 +119,7 @@ public class AccountManagementSteps extends BaseSteps {
 
         Response accountResponse = apiService.getAccount(accountId);
 
-        if ("<currencies>".equals(currency)) {
+        if ("ALL_CURRENCIES".equals(currency)) {
             String[] currencies = (String[]) TestContext.getValue("currencies");
             for (String curr : currencies) {
                 verificationService.verifyAccountBalance(accountResponse, curr, expectedAmount);

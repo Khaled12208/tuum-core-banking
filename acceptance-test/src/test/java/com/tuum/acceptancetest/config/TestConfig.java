@@ -14,17 +14,21 @@ import org.slf4j.LoggerFactory;
 public class TestConfig {
     private static final Logger logger = LoggerFactory.getLogger(TestConfig.class);
     
-    private static final String BASE_URL = System.getProperty("base.url", "http://localhost:8083");
+    private static final String BASE_URL = System.getProperty("base.url", System.getenv("BASE_URL") != null ? System.getenv("BASE_URL") : "http://localhost:8083");
     private static final String API_VERSION = "/api/v1";
     
     public static void setupRestAssured() {
+        logger.info("DEBUG: System property 'base.url' = {}", System.getProperty("base.url"));
+        logger.info("DEBUG: Environment variable 'BASE_URL' = {}", System.getenv("BASE_URL"));
+        logger.info("DEBUG: Final BASE_URL = {}", BASE_URL);
+        logger.info("DEBUG: API_VERSION = {}", API_VERSION);
+        logger.info("DEBUG: Complete URL = {}", BASE_URL + API_VERSION);
+        
         RestAssured.baseURI = BASE_URL;
         RestAssured.basePath = API_VERSION;
         
-        // Add Allure filter for reporting
         RestAssured.filters(new AllureRestAssured());
         
-        // Add logging filters
         RestAssured.filters(new RequestLoggingFilter(), new ResponseLoggingFilter());
         
         logger.info("RestAssured configured with base URL: {}", BASE_URL + API_VERSION);

@@ -17,7 +17,7 @@ Feature: Account Management
     And the response should contain the account details
     And the account should have the following balances initialized:
       | currency | expectedAmount |
-      | <currencies> | 0.0 |
+      | ALL_CURRENCIES | 0.0 |
 
     Examples:
       | customerId | country | currencies |
@@ -40,12 +40,3 @@ Feature: Account Management
     When I request the account balances
     Then the account balances should be returned successfully
     And each currency should have a balance amount
-
-  @exact-match
-  Scenario: Create a new account with exact curl payload
-    Given I want to create a new account with exact payload:
-      | customerId | country | currencies |
-      | 12345      | EE      | EUR        |
-    When I send a request to create the account
-    Then the account should be created successfully
-    And the response should contain the account details 

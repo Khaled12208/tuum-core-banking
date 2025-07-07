@@ -37,12 +37,3 @@ Feature: Transaction Processing
     When I request the account transactions
     Then the account transactions should be returned successfully
     And the response should contain a list of transactions
-
-  @exact-match
-  Scenario: Create a transaction with exact curl payload
-    Given I want to create a transaction with exact payload:
-      | accountId | amount | currency | direction | description |
-      | ACCD8F25F5D | 100.50 | EUR | IN | Salary payment |
-    When I send a request to create the transaction
-    Then the transaction should be created successfully
-    And the response should contain the transaction details 

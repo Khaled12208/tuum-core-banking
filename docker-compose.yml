@@ -112,6 +112,29 @@ services:
       retries: 3
       start_period: 40s
 
+  acceptance-test:
+    build:
+      context: .
+      dockerfile: acceptance-test/Dockerfile
+    container_name: tuum-acceptance-test
+    ports:
+      - "8085:8085"
+    environment:
+      BASE_URL: http://fs-accounts-service:8083
+      CS_ACCOUNTS_EVENTS_CONSUMER_URL: http://cs-accounts-events-consumer:8084
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/tuum_banking
+      SPRING_DATASOURCE_USERNAME: tuum_user
+      SPRING_DATASOURCE_PASSWORD: tuum_password
+    depends_on:
+      fs-accounts-service:
+        condition: service_healthy
+      cs-accounts-events-consumer:
+        condition: service_healthy
+    networks:
+      - tuum-network
+    profiles:
+      - test
+
 volumes:
   postgres_data:
   rabbitmq_data:

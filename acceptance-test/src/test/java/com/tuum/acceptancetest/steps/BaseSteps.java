@@ -28,10 +28,17 @@ public abstract class BaseSteps {
     protected void verifySystemHealth() {
         Allure.addDescription("Checking if the banking system is healthy and ready for testing");
         
+        String endpoint = "/actuator/health";
+        String fullUrl = TestConfig.getBaseUrl() + endpoint;
+        logger.info(" FULL ENDPOINT URL: {}", fullUrl);
+        logger.info(" Base URL from config: {}", TestConfig.getBaseUrl());
+        logger.info(" Endpoint path: {}", endpoint);
+        logger.info(" About to make GET request...");
+        
         Response healthResponse = given()
                 .spec(TestConfig.getRequestSpec())
                 .when()
-                .get("/actuator/health")
+                .get(endpoint)
                 .then()
                 .statusCode(200)
                 .extract().response();
@@ -150,7 +157,7 @@ public abstract class BaseSteps {
             }
         }
         
-        Allure.addDescription("✅ " + operation + " response fields verified successfully");
+        Allure.addDescription(" " + operation + " response fields verified successfully");
         Allure.addAttachment(operation + " Field Verification", "text/plain", verificationDetails.toString());
         
         logger.info("{} response fields verified successfully", operation);
