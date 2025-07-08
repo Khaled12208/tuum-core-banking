@@ -2,49 +2,54 @@
 
 This project is a **microservices-based core banking platform** designed to handle **account management** and **transaction processing** using an **event-driven architecture**. It is built with scalability, modularity, and eventual consistency in mind.
 
-- Follows **CQRS (Command Query Responsibility Segregation)**:
+- Follows **CQRS (Command Query Responsibility Segregation) with event driven**:
   - **Queries**: Direct DB access for low-latency reads.
   - **Commands**: Handled asynchronously via event publishing.
+  - 
 - Built on a **semi-asynchronous architecture**:
-  - In a production-grade, fully async setup, commands would be fire-and-forget.
-  - In this implementation, some API calls **wait for completion notifications** before responding, to satisfy specific requirements.
+  - In a production-grade, fully async setup, commands would be fire-and-forget with webhooks/callbacks
+  - In this implementation, some API calls **wait for completion notifications** before responding, to satisfy specific requirements of having response body
+  
 - **RabbitMQ** is used as the message broker.
-- Event publishing and response flow:
-  - Commands are published to `{entity}-create-queue`. by main service
-  - Commands are consumed from `{entity}-create-queue`. by costumer  service
-  - Notifications or errors are publish  via `{entity}-notification-queue` or `{entity}-error-queue`. by consumer sink
-  - Notifications or errors are consumed  via `{entity}-notification-queue` or `{entity}-error-queue`. by main service
-
-- A custom RabbitMQ listener:
-  - Listen for the command in the event queue
-  - Listens for completion notifications while having ScheduledExecutorService to listen to error topic in the same time and if received exception it will react it received notification it will react
-  - Designed to optionally notify clients via callback endpoints in future enhancements.
+  - Event publishing and response flow:
+    - Commands are published to `{entity}-create-queue`. by main service
+    - Commands are consumed from `{entity}-create-queue`. by costumer  service
+    - Notifications or errors are publish  via `{entity}-notification-queue` or `{entity}-error-queue`. by consumer sink
+    - Notifications or errors are consumed  via `{entity}-notification-queue` or `{entity}-error-queue`. by main service
+  - A custom RabbitMQ listener:
+    - Listen for the command in the event queue
+    - Listens for completion notifications while having ScheduledExecutorService to listen to error topic in the same time and if received exception it will react it received notification it will react
+    - Designed to optionally notify clients via callback endpoints in future enhancements.
 
 - **Features**
   - double submissions handled by ConcurrentMap to prevent double submission 
-  - database has optimism look to support concurrency and isolation
+  - database has optimism lock to support concurrency and isolation
+  - source of truth table to prevent double processing messages
   - UUID is binged generated in the consumer side avoiding DB generation of UUID 
+  - CompletableFuture to make the request in form of promise and fulfill as support for concurrency and avoid blocking calls
+  - ScheduledExecutorService polling approach to periodically check the queues to complete the promise either by error or by success response 
 
 
 - **Common Issues**
 
   - Service won't start
   - Database connection issues
-  - RabbitMQ connection issues: for liner
+  - RabbitMQ's connection issues: for liner
   - common library is not compiling well
-  - redundant code :D no was not time to clean
+  - if you fired a double request it will get the same processed request data, but if the request has been procssed in different session it will return error in double submission then in second trail it will get the request data
 
 - **Future-enactments**
   - Exception handling should be better
-  - using design pattern
-  - loggin
-  - full ASYNC processing
-  - using AUTH like JWT alongside with API-KEY for security
-  -  DELETE Enndpoint to check cascaded delete 
+  - applying design pattern
+  - logs 
+  - full ASYNC processing using fire-forget and webhook
+  - Apply AUTH like JWT alongside with API-KEY for security
+  - DELETE Endpoint to check cascaded delete 
+  - resilience4j or (circuitbreaker / and retry) 
 
 - ** Development Machine Performance for transcription endpoint **
 
-Performance Metrics: 1000 request / 5 Concurrency / 30sec :: using Bash script
+Performance Metrics: 1000 request / 5 Concurrency / 30sec :: using Bash script with help of AI 
 
 | Metric                    | Account Creation | Transaction Processing |
 | ------------------------- | ---------------- | ---------------------- |
@@ -331,6 +336,12 @@ curl -s -u tuum_user:tuum_password http://localhost:15672/api/queues | jq '.[].n
 curl -s -u tuum_user:tuum_password http://localhost:15672/api/queues/%2F/account-events-queue
 ```
 
-## System Architecture Overview
+## Scalability - for future
 
-![Tuum Banking - Scalable Cloud Native](docs/tuum-architecture.png)
+![Tuum Banking - Scalable Cloud Native](future-system.png)
+
+ 1. separation of concerns between microservices
+ 2. better queuing 
+ 3. full AYSC 
+ 4. using docker and / k8s for scaling out 
+ 5. applying monitoring like data dog or kebana to understand patterns and spikes and provide operational excellency  
